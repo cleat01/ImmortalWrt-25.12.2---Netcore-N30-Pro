@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      # ============================================================
+      # 1. Install build dependencies
+      # ============================================================
       - name: Install ImmortalWrt build dependencies
         shell: bash
         run: |
@@ -18,6 +21,9 @@ jobs:
 
           sudo bash -c 'bash <(curl -fsSL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
+      # ============================================================
+      # 2. Clone exact ImmortalWrt 25.12.2 source
+      # ============================================================
       - name: Clone ImmortalWrt 25.12.2
         shell: bash
         run: |
@@ -31,9 +37,22 @@ jobs:
             immortalwrt
 
           cd immortalwrt
-          echo "ImmortalWrt commit:"
-          git rev-parse HEAD
 
+          echo "========================================"
+          echo "ImmortalWrt source information"
+          echo "========================================"
+          echo "Branch/tag:"
+          git describe --tags --always || true
+          echo
+          echo "Commit:"
+          git rev-parse HEAD
+          echo
+          git status --short
+          echo "========================================"
+
+      # ============================================================
+      # 3. Clone N30 Pro adaptation
+      # ============================================================
       - name: Clone N30 Pro adaptation
         shell: bash
         run: |
@@ -45,6 +64,23 @@ jobs:
             https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git \
             n30-patch
 
+          echo "========================================"
+          echo "N30 Pro adaptation repository"
+          echo "========================================"
+
+          cd n30-patch
+
+          git rev-parse HEAD
+
+          echo
+          echo "Repository contents:"
+          find . -maxdepth 3 -type f -print | sort
+
+          echo "========================================"
+
+      # ============================================================
+      # 4. Apply N30 Pro adaptation
+      # ============================================================
       - name: Apply N30 Pro adaptation
         shell: bash
         working-directory: immortalwrt
@@ -53,6 +89,9 @@ jobs:
 
           bash ../n30-patch/scripts/apply-netcore-n30pro.sh ../n30-patch
 
+      # ============================================================
+      # 5. Verify N30 Pro DTS / VBUS
+      # ============================================================
       - name: Verify N30 Pro DTS and USB VBUS
         shell: bash
         working-directory: immortalwrt
@@ -61,58 +100,164 @@ jobs:
 
           DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
 
+          echo "========================================"
+          echo "Verify N30 Pro DTS"
+          echo "========================================"
+
           test -f "$DTS"
 
-          echo "===== N30 Pro DTS ====="
+          echo
+          echo "DTS file:"
+          echo "$DTS"
+
+          echo
+          echo "===== Entire DTS ====="
           cat "$DTS"
 
+          echo
           echo "===== Verify model ====="
-          grep -Fq 'model = "Netcore N30 Pro";' "$DTS"
 
+          grep -Fq \
+            'model = "Netcore N30 Pro";' \
+            "$DTS"
+
+          echo
           echo "===== Verify compatible ====="
-          grep -Fq '"netcore,n30-pro"' "$DTS"
 
+          grep -Fq \
+            'compatible = "netcore,n30-pro", "mediatek,mt7981";' \
+            "$DTS"
+
+          echo
           echo "===== Verify USB VBUS GPIO23 ====="
-          grep -Fq 'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' "$DTS"
 
-          echo "===== Verify 5V regulator ====="
-          grep -Fq 'regulator-min-microvolt = <5000000>;' "$DTS"
-          grep -Fq 'regulator-max-microvolt = <5000000>;' "$DTS"
+          grep -Fq \
+            'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' \
+            "$DTS"
 
+          echo
+          echo "===== Verify VBUS 5V minimum ====="
+
+          grep -Fq \
+            'regulator-min-microvolt = <5000000>;' \
+            "$DTS"
+
+          echo
+          echo "===== Verify VBUS 5V maximum ====="
+
+          grep -Fq \
+            'regulator-max-microvolt = <5000000>;' \
+            "$DTS"
+
+          echo
           echo "===== Verify regulator boot-on ====="
-          grep -Fq 'regulator-boot-on;' "$DTS"
 
-          echo "===== Verify USB VBUS supply ====="
-          grep -Fq 'vbus-supply = <&usb_vbus>;' "$DTS"
+          grep -Fq \
+            'regulator-boot-on;' \
+            "$DTS"
 
+          echo
+          echo "===== Verify USB VBUS regulator name ====="
+
+          grep -Fq \
+            'regulator-name = "usb-vbus";' \
+            "$DTS"
+
+          echo
           echo "===== Verify USB PHY ====="
-          grep -A5 -B2 '&usb_phy' "$DTS" \
+
+          USB_PHY_BLOCK="$(
+            grep -A8 -B3 \
+              '&usb_phy' \
+              "$DTS"
+          )"
+
+          echo "$USB_PHY_BLOCK"
+
+          echo "$USB_PHY_BLOCK" \
             | grep -Fq 'status = "okay";'
 
+          echo
           echo "===== Verify XHCI ====="
-          grep -A8 -B2 '&xhci' "$DTS" \
+
+          XHCI_BLOCK="$(
+            grep -A10 -B3 \
+              '&xhci' \
+              "$DTS"
+          )"
+
+          echo "$XHCI_BLOCK"
+
+          echo "$XHCI_BLOCK" \
+            | grep -Fq 'vbus-supply = <&usb_vbus>;'
+
+          echo "$XHCI_BLOCK" \
             | grep -Fq 'status = "okay";'
 
-          echo "N30 Pro DTS USB VBUS checks passed."
+          echo
+          echo "N30 Pro DTS / VBUS verification PASSED."
 
+      # ============================================================
+      # 6. Verify board integration inserted by adaptation
+      # ============================================================
       - name: Verify N30 Pro board integration
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          grep -Fq 'define Device/netcore_n30-pro' \
-            target/linux/mediatek/image/filogic.mk
+          echo "========================================"
+          echo "Verify N30 Pro board integration"
+          echo "========================================"
 
-          grep -Fq 'netcore,n30-pro' \
-            target/linux/mediatek/filogic/base-files/etc/board.d/02_network
+          IMAGE_FILE="target/linux/mediatek/image/filogic.mk"
+          NET_FILE="target/linux/mediatek/filogic/base-files/etc/board.d/02_network"
+          WIFI_FILE="target/linux/mediatek/filogic/base-files/etc/hotplug.d/ieee80211/11_fix_wifi_mac"
 
-          grep -Fq 'netcore,n30-pro' \
-            target/linux/mediatek/filogic/base-files/etc/hotplug.d/ieee80211/11_fix_wifi_mac
+          echo
+          echo "===== Verify Device definition ====="
 
-          echo "N30 Pro board integration checks passed."
+          grep -Fq \
+            'define Device/netcore_n30-pro' \
+            "$IMAGE_FILE"
 
-      - name: Verify USB KernelPackage definitions
+          echo
+          echo "===== N30 Pro Device definition ====="
+
+          grep -A20 -B2 \
+            '^define Device/netcore_n30-pro$' \
+            "$IMAGE_FILE"
+
+          echo
+          echo "===== Verify DTS name ====="
+
+          grep -A20 \
+            '^define Device/netcore_n30-pro$' \
+            "$IMAGE_FILE" \
+            | grep -Fq \
+              'DEVICE_DTS := mt7981b-netcore-n30-pro'
+
+          echo
+          echo "===== Verify board network entry ====="
+
+          grep -Fq \
+            'netcore,n30-pro' \
+            "$NET_FILE"
+
+          echo
+          echo "===== Verify Wi-Fi MAC handling ====="
+
+          grep -Fq \
+            'netcore,n30-pro' \
+            "$WIFI_FILE"
+
+          echo
+          echo "N30 Pro board integration verification PASSED."
+
+      # ============================================================
+      # 7. Verify exact XHCI package definitions
+      # ============================================================
+      - name: Verify USB XHCI package definitions
         shell: bash
         working-directory: immortalwrt
         run: |
@@ -120,107 +265,87 @@ jobs:
 
           USB_MK="package/kernel/linux/modules/usb.mk"
 
+          echo "========================================"
+          echo "Verify USB XHCI package definitions"
+          echo "========================================"
+
           test -f "$USB_MK"
 
-          echo "===== USB KernelPackage definitions ====="
+          echo
+          echo "===== usb3 package definition ====="
 
-          grep -nE \
-            '^define KernelPackage/(usb3|usb-xhci-hcd|usb-xhci-mtk)$' \
+          grep -n \
+            -A20 \
+            -B3 \
+            '^define KernelPackage/usb3$' \
             "$USB_MK"
 
-          echo "===== XHCI MTK definition details ====="
+          echo
+          echo "===== xhci-hcd package definition ====="
 
-          grep -n -A12 -B2 \
+          grep -n \
+            -A15 \
+            -B3 \
+            '^define KernelPackage/usb-xhci-hcd$' \
+            "$USB_MK"
+
+          echo
+          echo "===== xhci-mtk package definition ====="
+
+          grep -n \
+            -A20 \
+            -B3 \
             '^define KernelPackage/usb-xhci-mtk$' \
             "$USB_MK"
 
-          echo "USB KernelPackage definitions found."
+          echo
+          echo "===== Verify package definitions exist ====="
 
-      - name: Force XHCI packages into N30 Pro device profile
-        shell: bash
-        working-directory: immortalwrt
-        run: |
-          set -e
+          grep -q \
+            '^define KernelPackage/usb3$' \
+            "$USB_MK"
 
-          FILE="target/linux/mediatek/image/filogic.mk"
+          grep -q \
+            '^define KernelPackage/usb-xhci-hcd$' \
+            "$USB_MK"
 
-          python3 - <<'PY'
-          from pathlib import Path
+          grep -q \
+            '^define KernelPackage/usb-xhci-mtk$' \
+            "$USB_MK"
 
-          path = Path("target/linux/mediatek/image/filogic.mk")
-          text = path.read_text()
+          echo
+          echo "===== Verify MTK XHCI kernel symbol ====="
 
-          old = """define Device/netcore_n30-pro
-            DEVICE_VENDOR := Netcore
-            DEVICE_MODEL := N30 Pro
-            DEVICE_DTS := mt7981b-netcore-n30-pro
-            DEVICE_DTS_DIR := ../dts
-            DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware \\
-              kmod-usb3 automount
-            KERNEL_IN_UBI := 1
-            UBINIZE_OPTS := -E 5
-            BLOCKSIZE := 128k
-            PAGESIZE := 2048
-            IMAGE_SIZE := 117248k
-            IMAGES += factory.bin
-            IMAGE/factory.bin := append-ubi | check-size $$(IMAGE_SIZE)
-            IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-          endef"""
+          grep -A15 \
+            '^define KernelPackage/usb-xhci-mtk$' \
+            "$USB_MK" \
+            | grep -Fq \
+              'KCONFIG:=CONFIG_USB_XHCI_MTK'
 
-          new = """define Device/netcore_n30-pro
-            DEVICE_VENDOR := Netcore
-            DEVICE_MODEL := N30 Pro
-            DEVICE_DTS := mt7981b-netcore-n30-pro
-            DEVICE_DTS_DIR := ../dts
-            DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware \\
-              kmod-usb3 kmod-usb-xhci-hcd kmod-usb-xhci-mtk automount
-            KERNEL_IN_UBI := 1
-            UBINIZE_OPTS := -E 5
-            BLOCKSIZE := 128k
-            PAGESIZE := 2048
-            IMAGE_SIZE := 117248k
-            IMAGES += factory.bin
-            IMAGE/factory.bin := append-ubi | check-size $$(IMAGE_SIZE)
-            IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-          endef"""
+          echo
+          echo "===== Verify MTK XHCI module file ====="
 
-          if old not in text:
-              raise SystemExit(
-                  "ERROR: Expected netcore_n30-pro device definition was not found."
-              )
+          grep -A20 \
+            '^define KernelPackage/usb-xhci-mtk$' \
+            "$USB_MK" \
+            | grep -Fq \
+              'xhci-mtk-hcd.ko'
 
-          text = text.replace(old, new, 1)
-          path.write_text(text)
-          PY
+          echo
+          echo "===== Verify MTK XHCI autoload ====="
 
-          echo "===== Final N30 Pro Device definition ====="
+          grep -A20 \
+            '^define KernelPackage/usb-xhci-mtk$' \
+            "$USB_MK" \
+            | grep -Fq \
+              'xhci-mtk-hcd'
 
-          grep -n -A18 -B2 \
-            '^define Device/netcore_n30-pro$' \
-            "$FILE"
+          echo
+          echo "USB XHCI package definition verification PASSED."
 
-          echo "N30 Pro device profile now explicitly includes XHCI packages."
-
-      - name: Verify XHCI package names after device-profile modification
-        shell: bash
-        working-directory: immortalwrt
-        run: |
-          set -e
-
-          FILE="target/linux/mediatek/image/filogic.mk"
-
-          grep -A12 \
-            '^define Device/netcore_n30-pro$' \
-            "$FILE" \
-            | grep -Fq 'kmod-usb-xhci-hcd'
-
-          grep -A12 \
-            '^define Device/netcore_n30-pro$' \
-            "$FILE" \
-            | grep -Fq 'kmod-usb-xhci-mtk'
-
-          echo "N30 Pro device profile XHCI package checks passed."
-
+      # ============================================================
+      # 8. Update feeds
+      # ============================================================
       - name: Update and install feeds
         shell: bash
         working-directory: immortalwrt
@@ -230,6 +355,13 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      # ============================================================
+      # 9. Configure N30 Pro
+      #
+      # IMPORTANT:
+      # Do NOT modify filogic.mk here.
+      # The three XHCI package selections are explicit.
+      # ============================================================
       - name: Configure N30 Pro
         shell: bash
         working-directory: immortalwrt
@@ -241,30 +373,61 @@ jobs:
           CONFIG_TARGET_mediatek_filogic=y
           CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y
 
+          # LuCI
           CONFIG_PACKAGE_luci=y
 
+          # ========================================================
           # USB 3.0 / XHCI
+          # ========================================================
+
+          # USB 3 controller meta package
           CONFIG_PACKAGE_kmod-usb3=y
+
+          # Generic XHCI HCD
           CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
+
+          # MediaTek XHCI host controller
           CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
 
-          # USB storage
+          # USB core / storage
           CONFIG_PACKAGE_kmod-usb-storage=y
 
-          # Filesystems
+          # Filesystems commonly used by USB storage
           CONFIG_PACKAGE_kmod-fs-ext4=y
           CONFIG_PACKAGE_kmod-fs-vfat=y
           EOF
 
+          echo "========================================"
+          echo "Initial .config"
+          echo "========================================"
+
+          cat .config
+
+          echo
+          echo "========================================"
+          echo "Running make defconfig"
+          echo "========================================"
+
           make defconfig
 
-      - name: Verify final OpenWrt configuration
+          echo
+          echo "Configuration generated successfully."
+
+      # ============================================================
+      # 10. Verify final package selection
+      # ============================================================
+      - name: Verify final configuration
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          echo "===== Target configuration ====="
+          echo "========================================"
+          echo "Verify final configuration"
+          echo "========================================"
+
+          echo
+          echo "===== Target ====="
 
           grep -Fxq \
             'CONFIG_TARGET_mediatek=y' \
@@ -278,7 +441,8 @@ jobs:
             'CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y' \
             .config
 
-          echo "===== Package configuration ====="
+          echo
+          echo "===== USB package selections ====="
 
           grep -Fxq \
             'CONFIG_PACKAGE_kmod-usb3=y' \
@@ -296,25 +460,75 @@ jobs:
             'CONFIG_PACKAGE_kmod-usb-storage=y' \
             .config
 
-          echo "===== Kernel XHCI configuration ====="
-
-          grep -Eq \
-            '^CONFIG_USB_XHCI_HCD=[ym]$' \
-            .config
-
-          grep -Eq \
-            '^CONFIG_USB_XHCI_MTK=[ym]$' \
-            .config
-
-          echo "===== Relevant configuration ====="
+          echo
+          echo "===== Show USB configuration ====="
 
           grep -E \
-            '^(CONFIG_TARGET_mediatek|CONFIG_PACKAGE_kmod-usb|CONFIG_USB_XHCI_)' \
+            '^(CONFIG_PACKAGE_kmod-usb|CONFIG_PACKAGE_kmod-fs-)' \
             .config \
             | sort
 
-          echo "Final OpenWrt configuration checks passed."
+          echo
+          echo "===== Verify generated kernel-related USB symbols ====="
 
+          if grep -q \
+            '^CONFIG_USB_XHCI_HCD=' \
+            .config; then
+
+            grep \
+              '^CONFIG_USB_XHCI_HCD=' \
+              .config
+
+          else
+
+            echo "CONFIG_USB_XHCI_HCD is not present in top-level .config yet."
+            echo "This is not treated as failure; it will be verified from the actual kernel .config after compilation."
+
+          fi
+
+          if grep -q \
+            '^CONFIG_USB_XHCI_MTK=' \
+            .config; then
+
+            grep \
+              '^CONFIG_USB_XHCI_MTK=' \
+              .config
+
+          else
+
+            echo "CONFIG_USB_XHCI_MTK is not present in top-level .config yet."
+            echo "This is not treated as failure; it will be verified from the actual kernel .config after compilation."
+
+          fi
+
+          echo
+          echo "Final configuration verification PASSED."
+
+      # ============================================================
+      # 11. Print relevant generated configuration
+      # ============================================================
+      - name: Show effective USB configuration
+        shell: bash
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "Effective USB configuration"
+          echo "========================================"
+
+          grep -E \
+            'CONFIG_(TARGET_mediatek|TARGET_mediatek_filogic|PACKAGE_kmod-usb|USB_XHCI_)' \
+            .config \
+            | sort \
+            || true
+
+          echo
+          echo "USB configuration inspection complete."
+
+      # ============================================================
+      # 12. Download sources
+      # ============================================================
       - name: Download sources
         shell: bash
         working-directory: immortalwrt
@@ -323,72 +537,238 @@ jobs:
 
           make download -j2 V=s
 
+      # ============================================================
+      # 13. Build firmware
+      # ============================================================
       - name: Build firmware
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          make -j"$(nproc)" || make -j1 V=s
+          echo "========================================"
+          echo "Start firmware build"
+          echo "========================================"
 
+          make -j"$(nproc)" \
+            || make -j1 V=s
+
+      # ============================================================
+      # 14. Verify REAL kernel XHCI modules
+      #
+      # This is the most important new verification.
+      #
+      # Previous failed firmware had:
+      #   usbcore.ko
+      #   usb-storage.ko
+      #
+      # but lacked:
+      #   xhci-hcd.ko
+      #   xhci-mtk-hcd.ko
+      #
+      # This step will now HARD FAIL if either module is absent.
+      # ============================================================
       - name: Verify actual XHCI kernel modules
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          echo "===== Searching for xhci-hcd.ko ====="
+          echo "========================================"
+          echo "Verify actual XHCI kernel modules"
+          echo "========================================"
 
-          find build_dir \
+          echo
+          echo "===== Search xhci-hcd.ko ====="
+
+          find \
+            build_dir \
             -type f \
             -name 'xhci-hcd.ko' \
-            -print
+            -print \
+            | sort
+
+          echo
+          echo "===== Search xhci-mtk-hcd.ko ====="
+
+          find \
+            build_dir \
+            -type f \
+            -name 'xhci-mtk-hcd.ko' \
+            -print \
+            | sort
 
           XHCI_HCD_COUNT="$(
-            find build_dir \
+            find \
+              build_dir \
               -type f \
               -name 'xhci-hcd.ko' \
               -print \
               | wc -l
           )"
 
-          if [ "$XHCI_HCD_COUNT" -eq 0 ]; then
-            echo "ERROR: xhci-hcd.ko was not built."
-            exit 1
-          fi
-
-          echo "===== Searching for xhci-mtk-hcd.ko ====="
-
-          find build_dir \
-            -type f \
-            -name 'xhci-mtk-hcd.ko' \
-            -print
-
           XHCI_MTK_COUNT="$(
-            find build_dir \
+            find \
+              build_dir \
               -type f \
               -name 'xhci-mtk-hcd.ko' \
               -print \
               | wc -l
           )"
 
-          if [ "$XHCI_MTK_COUNT" -eq 0 ]; then
-            echo "ERROR: xhci-mtk-hcd.ko was not built."
+          echo
+          echo "xhci-hcd.ko count: $XHCI_HCD_COUNT"
+          echo "xhci-mtk-hcd.ko count: $XHCI_MTK_COUNT"
+
+          if [ "$XHCI_HCD_COUNT" -eq 0 ]; then
+            echo
+            echo "ERROR: xhci-hcd.ko was NOT built."
+            echo "USB XHCI support is incomplete."
             exit 1
           fi
 
-          echo "XHCI kernel modules were actually built."
+          if [ "$XHCI_MTK_COUNT" -eq 0 ]; then
+            echo
+            echo "ERROR: xhci-mtk-hcd.ko was NOT built."
+            echo "MediaTek XHCI support is incomplete."
+            exit 1
+          fi
 
-      - name: Verify installed XHCI modules in root filesystem
+          echo
+          echo "SUCCESS:"
+          echo "  xhci-hcd.ko       exists"
+          echo "  xhci-mtk-hcd.ko   exists"
+          echo
+          echo "Actual XHCI kernel module verification PASSED."
+
+      # ============================================================
+      # 15. Verify actual kernel .config
+      # ============================================================
+      - name: Verify actual kernel configuration
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          echo "===== Searching target root filesystem ====="
+          echo "========================================"
+          echo "Verify actual compiled kernel configuration"
+          echo "========================================"
 
-          find build_dir \
+          KERNEL_CONFIGS="$(
+            find \
+              build_dir \
+              -type f \
+              -path '*/linux-*/.config' \
+              -print
+          )"
+
+          echo
+          echo "Kernel .config candidates:"
+          echo "$KERNEL_CONFIGS"
+
+          if [ -z "$KERNEL_CONFIGS" ]; then
+            echo
+            echo "ERROR: No compiled kernel .config found."
+            exit 1
+          fi
+
+          echo
+          echo "===== Search CONFIG_USB_XHCI_HCD ====="
+
+          echo "$KERNEL_CONFIGS" \
+            | while IFS= read -r cfg; do
+                [ -n "$cfg" ] || continue
+
+                if grep -Eq \
+                  '^CONFIG_USB_XHCI_HCD=[ym]$' \
+                  "$cfg"; then
+
+                  echo "FOUND in: $cfg"
+                  grep \
+                    '^CONFIG_USB_XHCI_HCD=' \
+                    "$cfg"
+
+                fi
+              done
+
+          echo
+          echo "===== Search CONFIG_USB_XHCI_MTK ====="
+
+          echo "$KERNEL_CONFIGS" \
+            | while IFS= read -r cfg; do
+                [ -n "$cfg" ] || continue
+
+                if grep -Eq \
+                  '^CONFIG_USB_XHCI_MTK=[ym]$' \
+                  "$cfg"; then
+
+                  echo "FOUND in: $cfg"
+                  grep \
+                    '^CONFIG_USB_XHCI_MTK=' \
+                    "$cfg"
+
+                fi
+              done
+
+          XHCI_KERNEL_OK=0
+          XHCI_MTK_KERNEL_OK=0
+
+          while IFS= read -r cfg; do
+            [ -n "$cfg" ] || continue
+
+            if grep -Eq \
+              '^CONFIG_USB_XHCI_HCD=[ym]$' \
+              "$cfg"; then
+
+              XHCI_KERNEL_OK=1
+
+            fi
+
+            if grep -Eq \
+              '^CONFIG_USB_XHCI_MTK=[ym]$' \
+              "$cfg"; then
+
+              XHCI_MTK_KERNEL_OK=1
+
+            fi
+
+          done <<< "$KERNEL_CONFIGS"
+
+          if [ "$XHCI_KERNEL_OK" -ne 1 ]; then
+            echo
+            echo "ERROR: CONFIG_USB_XHCI_HCD=y/m not found in compiled kernel configuration."
+            exit 1
+          fi
+
+          if [ "$XHCI_MTK_KERNEL_OK" -ne 1 ]; then
+            echo
+            echo "ERROR: CONFIG_USB_XHCI_MTK=y/m not found in compiled kernel configuration."
+            exit 1
+          fi
+
+          echo
+          echo "Compiled kernel XHCI configuration verification PASSED."
+
+      # ============================================================
+      # 16. Verify XHCI modules exist in generated rootfs
+      # ============================================================
+      - name: Verify XHCI modules in generated root filesystem
+        shell: bash
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "Verify XHCI modules in generated rootfs"
+          echo "========================================"
+
+          echo
+          echo "===== Root filesystem XHCI modules ====="
+
+          find \
+            build_dir \
             -type f \
+            -path '*/root-*/lib/modules/*' \
             \( \
               -name 'xhci-hcd.ko' \
               -o \
@@ -397,70 +777,160 @@ jobs:
             -print \
             | sort
 
-          echo "Installed XHCI module verification completed."
+          ROOTFS_XHCI_COUNT="$(
+            find \
+              build_dir \
+              -type f \
+              -path '*/root-*/lib/modules/*' \
+              \( \
+                -name 'xhci-hcd.ko' \
+                -o \
+                -name 'xhci-mtk-hcd.ko' \
+              \) \
+              -print \
+              | wc -l
+          )"
 
-      - name: Verify build manifest and USB packages
+          echo
+          echo "Rootfs XHCI module count: $ROOTFS_XHCI_COUNT"
+
+          if [ "$ROOTFS_XHCI_COUNT" -lt 2 ]; then
+            echo
+            echo "ERROR: Generated root filesystem does not contain both XHCI modules."
+            exit 1
+          fi
+
+          echo
+          echo "Generated root filesystem XHCI verification PASSED."
+
+      # ============================================================
+      # 17. Verify firmware manifest
+      # ============================================================
+      - name: Verify firmware manifests and USB packages
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          test -d bin/targets/mediatek/filogic
+          echo "========================================"
+          echo "Verify firmware manifests"
+          echo "========================================"
 
-          echo "===== Firmware directory ====="
+          TARGET_DIR="bin/targets/mediatek/filogic"
 
-          find \
-            bin/targets/mediatek/filogic \
-            -maxdepth 2 \
-            -type f \
-            -print \
-            | sort
+          test -d "$TARGET_DIR"
 
-          echo "===== Manifest files ====="
+          echo
+          echo "===== All manifests ====="
 
           find \
-            bin/targets/mediatek/filogic \
+            "$TARGET_DIR" \
             -maxdepth 1 \
             -type f \
             -name '*.manifest' \
-            -print
+            -print \
+            | sort
 
-          MANIFEST="$(
+          MANIFEST_COUNT="$(
             find \
-              bin/targets/mediatek/filogic \
+              "$TARGET_DIR" \
               -maxdepth 1 \
               -type f \
               -name '*.manifest' \
               -print \
-              | head -1
+              | wc -l
           )"
 
-          if [ -z "$MANIFEST" ]; then
+          if [ "$MANIFEST_COUNT" -eq 0 ]; then
+            echo
             echo "ERROR: No firmware manifest found."
             exit 1
           fi
 
-          echo "Using manifest:"
-          echo "$MANIFEST"
+          XHCI_MANIFEST_FOUND=0
 
-          echo "===== USB packages in manifest ====="
+          while IFS= read -r manifest; do
+            [ -n "$manifest" ] || continue
 
-          grep -E \
-            'kmod-usb3|kmod-usb-xhci-hcd|kmod-usb-xhci-mtk' \
-            "$MANIFEST"
+            echo
+            echo "========================================"
+            echo "Manifest: $manifest"
+            echo "========================================"
 
-          echo "USB package manifest checks passed."
+            if grep -Eq \
+              '(^|[[:space:]])kmod-usb3([[:space:]]|$)' \
+              "$manifest"; then
 
+              echo "FOUND: kmod-usb3"
+
+            fi
+
+            if grep -Eq \
+              '(^|[[:space:]])kmod-usb-xhci-hcd([[:space:]]|$)' \
+              "$manifest"; then
+
+              echo "FOUND: kmod-usb-xhci-hcd"
+
+            fi
+
+            if grep -Eq \
+              '(^|[[:space:]])kmod-usb-xhci-mtk([[:space:]]|$)' \
+              "$manifest"; then
+
+              echo "FOUND: kmod-usb-xhci-mtk"
+              XHCI_MANIFEST_FOUND=1
+
+            fi
+
+          done < <(
+            find \
+              "$TARGET_DIR" \
+              -maxdepth 1 \
+              -type f \
+              -name '*.manifest' \
+              -print \
+              | sort
+          )
+
+          if [ "$XHCI_MANIFEST_FOUND" -ne 1 ]; then
+            echo
+            echo "ERROR: No firmware manifest contains kmod-usb-xhci-mtk."
+            exit 1
+          fi
+
+          echo
+          echo "Firmware manifest XHCI verification PASSED."
+
+      # ============================================================
+      # 18. Verify N30 Pro firmware images
+      # ============================================================
       - name: Verify N30 Pro firmware images
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          echo "===== N30 Pro firmware images ====="
+          TARGET_DIR="bin/targets/mediatek/filogic"
+
+          echo "========================================"
+          echo "Verify N30 Pro firmware images"
+          echo "========================================"
+
+          echo
+          echo "===== All target files ====="
 
           find \
-            bin/targets/mediatek/filogic \
+            "$TARGET_DIR" \
+            -maxdepth 2 \
+            -type f \
+            -print \
+            | sort
+
+          echo
+          echo "===== N30 Pro / Netcore files ====="
+
+          find \
+            "$TARGET_DIR" \
             -maxdepth 2 \
             -type f \
             \( \
@@ -473,7 +943,7 @@ jobs:
 
           COUNT="$(
             find \
-              bin/targets/mediatek/filogic \
+              "$TARGET_DIR" \
               -maxdepth 2 \
               -type f \
               \( \
@@ -486,46 +956,72 @@ jobs:
           )"
 
           if [ "$COUNT" -eq 0 ]; then
-            echo "ERROR: No N30 Pro firmware image found."
+            echo
+            echo "ERROR: No N30 Pro / Netcore firmware file found."
             exit 1
           fi
 
-          echo "Found $COUNT N30 Pro firmware file(s)."
+          echo
+          echo "Found $COUNT N30 Pro / Netcore firmware file(s)."
+          echo "Firmware image verification PASSED."
 
+      # ============================================================
+      # 19. Generate complete build report
+      # ============================================================
       - name: Generate build report
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
+          REPORT="n30-pro-build-report.txt"
+
           {
-            echo "========================================"
-            echo "ImmortalWrt N30 Pro USB Build Report"
-            echo "========================================"
+            echo "============================================================"
+            echo "ImmortalWrt 25.12.2 - Netcore N30 Pro USB Fix Build Report"
+            echo "============================================================"
             echo
 
-            echo "ImmortalWrt commit:"
+            echo "Source:"
+            git describe --tags --always || true
+            echo "Commit:"
             git rev-parse HEAD
             echo
 
-            echo "Target configuration:"
-            grep '^CONFIG_TARGET_mediatek' .config
+            echo "============================================================"
+            echo "Target"
+            echo "============================================================"
+
+            grep '^CONFIG_TARGET_mediatek' .config || true
             echo
 
-            echo "USB package configuration:"
+            echo "============================================================"
+            echo "USB package configuration"
+            echo "============================================================"
+
             grep '^CONFIG_PACKAGE_kmod-usb' .config || true
             echo
 
-            echo "Kernel XHCI configuration:"
+            echo "============================================================"
+            echo "Kernel XHCI configuration"
+            echo "============================================================"
+
             grep '^CONFIG_USB_XHCI_' .config || true
             echo
 
-            echo "N30 Pro DTS:"
+            echo "============================================================"
+            echo "N30 Pro DTS"
+            echo "============================================================"
+
             echo "target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
             echo
 
-            echo "Actual XHCI modules:"
-            find build_dir \
+            echo "============================================================"
+            echo "Actual XHCI modules"
+            echo "============================================================"
+
+            find \
+              build_dir \
               -type f \
               \( \
                 -name 'xhci-hcd.ko' \
@@ -534,9 +1030,31 @@ jobs:
               \) \
               -print \
               | sort
+
             echo
 
-            echo "Firmware:"
+            echo "============================================================"
+            echo "Generated rootfs XHCI modules"
+            echo "============================================================"
+
+            find \
+              build_dir \
+              -type f \
+              -path '*/root-*/lib/modules/*' \
+              \( \
+                -name 'xhci-hcd.ko' \
+                -o \
+                -name 'xhci-mtk-hcd.ko' \
+              \) \
+              -print \
+              | sort
+
+            echo
+
+            echo "============================================================"
+            echo "Firmware files"
+            echo "============================================================"
+
             find \
               bin/targets/mediatek/filogic \
               -maxdepth 2 \
@@ -550,15 +1068,22 @@ jobs:
               | sort
 
             echo
-            echo "========================================"
-          } > n30-pro-build-report.txt
 
-          cat n30-pro-build-report.txt
+            echo "============================================================"
+            echo "Build report completed"
+            echo "============================================================"
 
+          } > "$REPORT"
+
+          cat "$REPORT"
+
+      # ============================================================
+      # 20. Upload firmware + report
+      # ============================================================
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-25.12.2-netcore-n30-pro-usb-fix-v2
+          name: immortalwrt-25.12.2-netcore-n30-pro-usb-fix-v3
           path: |
             immortalwrt/bin/targets/mediatek/filogic/**
             immortalwrt/n30-pro-build-report.txt
