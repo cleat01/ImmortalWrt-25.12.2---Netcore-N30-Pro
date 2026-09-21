@@ -1,0 +1,108 @@
+```yaml
+name: Build ImmortalWrt 25.12.2 - Netcore N30 Pro
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          df -h
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
+
+      - name: Clone ImmortalWrt 25.12.2
+        run: |
+          git clone --depth 1 --branch v25.12.2 https://github.com/immortalwrt/immortalwrt.git immortalwrt
+
+      - name: Clone N30 Pro adaptation
+        run: |
+          git clone --depth 1 https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git n30-patch
+          cd n30-patch
+          git fetch --depth 1 origin 3e8191985f48b785f47d184a402a6754a663f393
+          git checkout 3e8191985f48b785f47d184a402a6754a663f393
+
+      - name: Apply N30 Pro adaptation
+        working-directory: immortalwrt
+        run: |
+          bash ../n30-patch/scripts/apply-netcore-n30pro.sh ../n30-patch
+
+      - name: Verify N30 Pro USB VBUS support
+        working-directory: immortalwrt
+        run: |
+          test -f target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          grep -Fq 'model = "Netcore N30 Pro";' target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          grep -Fq 'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          grep -Fq 'regulator-boot-on;' target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          grep -Fq 'vbus-supply = <&usb_vbus>;' target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          grep -Fq 'define Device/netcore_n30-pro' target/linux/mediatek/image/filogic.mk
+          grep -Fq 'netcore,n30-pro' target/linux/mediatek/filogic/base-files/etc/board.d/02_network
+          grep -Fq 'netcore,n30-pro' target/linux/mediatek/filogic/base-files/etc/hotplug.d/ieee80211/11_fix_wifi_mac
+
+      - name: Update and install feeds
+        working-directory: immortalwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure N30 Pro
+        working-directory: immortalwrt
+        run: |
+          cat > .config <<'EOF'
+          CONFIG_TARGET_mediatek=y
+          CONFIG_TARGET_mediatek_filogic=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_kmod-usb-storage=y
+          CONFIG_PACKAGE_kmod-fs-ext4=y
+          CONFIG_PACKAGE_kmod-fs-vfat=y
+          CONFIG_PACKAGE_kmod-fs-ntfs3=y
+          EOF
+          make defconfig
+
+      - name: Verify final configuration
+        working-directory: immortalwrt
+        run: |
+          grep -Fq 'CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y' .config
+          grep -Fq 'CONFIG_PACKAGE_luci=y' .config
+
+      - name: Download sources
+        working-directory: immortalwrt
+        run: |
+          make download -j2 V=s
+
+      - name: Build firmware
+        working-directory: immortalwrt
+        run: |
+          make -j$(nproc) V=s
+
+      - name: Verify firmware output
+        working-directory: immortalwrt
+        run: |
+          find bin/targets/mediatek/filogic -maxdepth 2 -type f -print | sort
+          test -n "$(find bin/targets/mediatek/filogic -maxdepth 2 -type f -name '*n30*' -print -quit)"
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-25.12.2-netcore-n30-pro
+          path: immortalwrt/bin/targets/mediatek/filogic/**
+          if-no-files-found: error
+          retention-days: 7
+```
