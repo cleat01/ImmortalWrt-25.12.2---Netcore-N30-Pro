@@ -1,4 +1,4 @@
-name: Build ImmortalWrt 25.12.2 - Netcore N30 Pro
+name: Build ImmortalWrt 25.12.2 - Netcore N30 Pro USB Fix
 
 "on":
   workflow_dispatch:
@@ -14,49 +14,86 @@ jobs:
       - name: Install ImmortalWrt build dependencies
         shell: bash
         run: |
+          set -e
+
           sudo bash -c 'bash <(curl -fsSL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
       - name: Clone ImmortalWrt 25.12.2
         shell: bash
         run: |
-          git clone --depth 1 --branch v25.12.2 --single-branch https://github.com/immortalwrt/immortalwrt.git immortalwrt
+          set -e
+
+          git clone \
+            --depth 1 \
+            --branch v25.12.2 \
+            --single-branch \
+            https://github.com/immortalwrt/immortalwrt.git \
+            immortalwrt
 
       - name: Clone N30 Pro adaptation
         shell: bash
         run: |
-          git clone --depth 1 --single-branch https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git n30-patch
+          set -e
+
+          git clone \
+            --depth 1 \
+            --single-branch \
+            https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git \
+            n30-patch
 
       - name: Apply N30 Pro adaptation
         shell: bash
         working-directory: immortalwrt
         run: |
+          set -e
+
           bash ../n30-patch/scripts/apply-netcore-n30pro.sh ../n30-patch
 
-      - name: Verify N30 Pro USB VBUS adaptation
+      - name: Verify N30 Pro DTS and USB VBUS
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          test -f target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
 
-          grep -Fq 'model = "Netcore N30 Pro";' \
-            target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          test -f "$DTS"
 
-          grep -Fq 'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' \
-            target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          echo "===== N30 Pro DTS ====="
+          cat "$DTS"
 
-          grep -Fq 'regulator-min-microvolt = <5000000>;' \
-            target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          echo "===== Verify model ====="
+          grep -Fq 'model = "Netcore N30 Pro";' "$DTS"
 
-          grep -Fq 'regulator-max-microvolt = <5000000>;' \
-            target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          echo "===== Verify compatible ====="
+          grep -Fq '"netcore,n30-pro"' "$DTS"
 
-          grep -Fq 'regulator-boot-on;' \
-            target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          echo "===== Verify USB VBUS GPIO23 ====="
+          grep -Fq 'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' "$DTS"
 
-          grep -Fq 'vbus-supply = <&usb_vbus>;' \
-            target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+          echo "===== Verify 5V regulator ====="
+          grep -Fq 'regulator-min-microvolt = <5000000>;' "$DTS"
+          grep -Fq 'regulator-max-microvolt = <5000000>;' "$DTS"
+
+          echo "===== Verify regulator boot-on ====="
+          grep -Fq 'regulator-boot-on;' "$DTS"
+
+          echo "===== Verify USB VBUS supply ====="
+          grep -Fq 'vbus-supply = <&usb_vbus>;' "$DTS"
+
+          echo "===== Verify USB PHY ====="
+          grep -A3 -B2 '&usb_phy' "$DTS" | grep -Fq 'status = "okay";'
+
+          echo "===== Verify XHCI ====="
+          grep -A5 -B2 '&xhci' "$DTS" | grep -Fq 'status = "okay";'
+
+          echo "N30 Pro DTS USB VBUS checks passed."
+
+      - name: Verify N30 Pro board integration
+        shell: bash
+        working-directory: immortalwrt
+        run: |
+          set -e
 
           grep -Fq 'define Device/netcore_n30-pro' \
             target/linux/mediatek/image/filogic.mk
@@ -67,10 +104,14 @@ jobs:
           grep -Fq 'netcore,n30-pro' \
             target/linux/mediatek/filogic/base-files/etc/hotplug.d/ieee80211/11_fix_wifi_mac
 
+          echo "N30 Pro board integration checks passed."
+
       - name: Update and install feeds
         shell: bash
         working-directory: immortalwrt
         run: |
+          set -e
+
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
@@ -78,71 +119,243 @@ jobs:
         shell: bash
         working-directory: immortalwrt
         run: |
+          set -e
+
           cat > .config <<'EOF'
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
           CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y
+
           CONFIG_PACKAGE_luci=y
+
+          # USB 3.0 / XHCI
+          CONFIG_PACKAGE_kmod-usb3=y
+          CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
+          CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
+
+          # USB storage
           CONFIG_PACKAGE_kmod-usb-storage=y
+
+          # Filesystems
           CONFIG_PACKAGE_kmod-fs-ext4=y
           CONFIG_PACKAGE_kmod-fs-vfat=y
           EOF
 
           make defconfig
 
-      - name: Verify final configuration
+      - name: Verify final kernel and USB configuration
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          grep -Fxq 'CONFIG_TARGET_mediatek=y' .config
+          echo "===== Target ====="
 
-          grep -Fxq 'CONFIG_TARGET_mediatek_filogic=y' .config
+          grep -Fxq \
+            'CONFIG_TARGET_mediatek=y' \
+            .config
 
-          grep -Fxq 'CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y' .config
+          grep -Fxq \
+            'CONFIG_TARGET_mediatek_filogic=y' \
+            .config
 
-          grep -Fxq 'CONFIG_PACKAGE_luci=y' .config
+          grep -Fxq \
+            'CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y' \
+            .config
 
-          grep -Fxq 'CONFIG_PACKAGE_kmod-usb-storage=y' .config
+          echo "===== USB configuration ====="
+
+          grep -Fxq \
+            'CONFIG_PACKAGE_kmod-usb3=y' \
+            .config
+
+          grep -Fxq \
+            'CONFIG_PACKAGE_kmod-usb-xhci-hcd=y' \
+            .config
+
+          grep -Fxq \
+            'CONFIG_PACKAGE_kmod-usb-xhci-mtk=y' \
+            .config
+
+          grep -Fxq \
+            'CONFIG_PACKAGE_kmod-usb-storage=y' \
+            .config
+
+          echo "===== Relevant final configuration ====="
+
+          grep -E \
+            'CONFIG_TARGET_mediatek|CONFIG_PACKAGE_kmod-usb|CONFIG_PACKAGE_kmod-fs-' \
+            .config \
+            | sort
+
+          echo "Final configuration checks passed."
+
+      - name: Check package definitions
+        shell: bash
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "===== Searching XHCI package definitions ====="
+
+          grep -R \
+            -n \
+            -E \
+            'Package/(kmod-usb3|kmod-usb-xhci-hcd|kmod-usb-xhci-mtk)' \
+            package \
+            target \
+            feeds \
+            2>/dev/null \
+            | head -100 || true
 
       - name: Download sources
         shell: bash
         working-directory: immortalwrt
         run: |
+          set -e
+
           make download -j2 V=s
 
       - name: Build firmware
         shell: bash
         working-directory: immortalwrt
         run: |
-          make -j"$(nproc)" || make -j1 V=s
+          set -e
 
-      - name: Verify firmware output
+          make -j"$(nproc)"
+
+      - name: Verify build manifest and USB packages
         shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
+          echo "===== Firmware directory ====="
+
           test -d bin/targets/mediatek/filogic
 
-          find bin/targets/mediatek/filogic \
+          find \
+            bin/targets/mediatek/filogic \
             -maxdepth 2 \
             -type f \
             -print \
             | sort
 
-          test -n "$(find bin/targets/mediatek/filogic \
+          echo "===== Manifest files ====="
+
+          find \
+            bin/targets/mediatek/filogic \
+            -maxdepth 1 \
+            -type f \
+            -name '*.manifest' \
+            -print
+
+          MANIFEST="$(find \
+            bin/targets/mediatek/filogic \
+            -maxdepth 1 \
+            -type f \
+            -name '*.manifest' \
+            -print \
+            | head -1)"
+
+          if [ -z "$MANIFEST" ]; then
+            echo "ERROR: No firmware manifest found."
+            exit 1
+          fi
+
+          echo "Using manifest:"
+          echo "$MANIFEST"
+
+          echo "===== Check USB packages in manifest ====="
+
+          grep -E \
+            'kmod-usb3|kmod-usb-xhci-hcd|kmod-usb-xhci-mtk' \
+            "$MANIFEST"
+
+          echo "USB package manifest checks passed."
+
+      - name: Verify firmware images
+        shell: bash
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "===== N30 Pro firmware images ====="
+
+          find \
+            bin/targets/mediatek/filogic \
             -maxdepth 2 \
             -type f \
-            -iname '*n30*' \
+            \( \
+              -iname '*n30*' \
+              -o \
+              -iname '*netcore*' \
+            \) \
             -print \
-            -quit)"
+            | sort
+
+          COUNT="$(find \
+            bin/targets/mediatek/filogic \
+            -maxdepth 2 \
+            -type f \
+            \( \
+              -iname '*n30*' \
+              -o \
+              -iname '*netcore*' \
+            \) \
+            -print \
+            | wc -l)"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "ERROR: No N30 Pro firmware image found."
+            exit 1
+          fi
+
+          echo "Found $COUNT N30 Pro firmware file(s)."
+
+      - name: Generate build report
+        shell: bash
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          {
+            echo "========================================"
+            echo "ImmortalWrt N30 Pro Build Report"
+            echo "========================================"
+            echo
+            echo "ImmortalWrt:"
+            git rev-parse HEAD
+            echo
+            echo "Kernel target:"
+            grep '^CONFIG_TARGET_mediatek' .config
+            echo
+            echo "USB packages:"
+            grep -E '^CONFIG_PACKAGE_kmod-usb' .config
+            echo
+            echo "N30 Pro DTS:"
+            echo "target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
+            echo
+            echo "Firmware:"
+            find \
+              bin/targets/mediatek/filogic \
+              -maxdepth 2 \
+              -type f \
+              -iname '*n30*' \
+              -print \
+              | sort
+            echo
+            echo "========================================"
+          } > n30-pro-build-report.txt
+
+          cat n30-pro-build-report.txt
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-25.12.2-netcore-n30-pro
-          path: immortalwrt/bin/targets/mediatek/filogic/**
+          name: immortalwrt-25.12.2-netcore-n30-pro-usb-fix
+          path: |
+            immortalwrt/bin/targets/mediatek/filogic/**
+            immortalwrt/n30-pro-build-report.txt
           if-no-files-found: error
           retention-days: 7
