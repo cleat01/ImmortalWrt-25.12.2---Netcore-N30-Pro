@@ -1,313 +1,143 @@
 name: Build ImmortalWrt 25.12.2 Netcore N30 Pro
 
-
 on:
   workflow_dispatch:
 
-
 env:
-  IMMORTALWRT_REPO: https://github.com/immortalwrt/immortalwrt.git
   IMMORTALWRT_BRANCH: openwrt-25.12
-  IMMORTALWRT_TAG: v25.12.2
-
-  N30_PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
-
-
+  PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
 
 jobs:
-
   build:
 
-    runs-on: ubuntu-24.04
-
+    runs-on: ubuntu-22.04
 
     steps:
 
-
-    - name: Checkout build repository
-
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
 
-
-    - name: Install build dependencies
-
-      run: |
-
-        sudo apt update
-
-        sudo apt install -y \
-          build-essential \
-          clang \
-          flex \
-          bison \
-          gawk \
-          gettext \
-          git \
-          libncurses-dev \
-          libssl-dev \
-          python3 \
-          python3-setuptools \
-          rsync \
-          unzip \
-          wget \
-          file \
-          zlib1g-dev
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            gawk \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-setuptools \
+            rsync \
+            unzip \
+            wget \
+            file \
+            zlib1g-dev
 
 
-
-    - name: Clone ImmortalWrt source
-
-      run: |
-
-        git clone \
-          --branch ${IMMORTALWRT_BRANCH} \
-          ${IMMORTALWRT_REPO} \
-          immortalwrt
+      - name: Clone ImmortalWrt
+        run: |
+          git clone \
+            --branch ${IMMORTALWRT_BRANCH} \
+            https://github.com/immortalwrt/immortalwrt.git \
+            immortalwrt
 
 
-        cd immortalwrt
+      - name: Clone N30 Pro patch
+        run: |
+          git clone \
+            --depth=1 \
+            ${PATCH_REPO} \
+            n30pro-patch
 
 
-        git checkout ${IMMORTALWRT_TAG}
+      - name: Apply N30 Pro patch
+        working-directory: immortalwrt
+        run: |
+          bash ../n30pro-patch/scripts/apply-netcore-n30pro.sh ../n30pro-patch
 
 
-
-    - name: Clone Netcore N30 Pro patch
-
-      run: |
-
-        git clone \
-          --depth=1 \
-          ${N30_PATCH_REPO} \
-          n30pro-patch
+      - name: Update feeds
+        working-directory: immortalwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
 
+      - name: Configure firmware
+        working-directory: immortalwrt
+        run: |
 
-    - name: Apply Netcore N30 Pro patch
-
-      working-directory: immortalwrt
-
-      run: |
-
-        bash ../n30pro-patch/scripts/apply-netcore-n30pro.sh \
-          ../n30pro-patch
-
-
-
-    - name: Verify N30 Pro patch result
-
-      working-directory: immortalwrt
-
-      run: |
-
-        echo "Checking Netcore N30 Pro DTS..."
-
-        find target/linux/mediatek \
-          -iname "*netcore*n30*"
-
-
-        echo "Checking device definition..."
-
-        grep -R "netcore_n30" \
-          target/linux/mediatek/image || true
-
-
-
-    - name: Update feeds
-
-      working-directory: immortalwrt
-
-      run: |
-
-        ./scripts/feeds update -a
-
-        ./scripts/feeds install -a
-    - name: Prepare N30 Pro config
-
-      working-directory: immortalwrt
-
-      run: |
-
-        cat > .config <<'EOF'
-
+          cat > .config <<'EOF'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
-
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
-
 
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-ssl=y
 
-
-# USB controller
-
 CONFIG_PACKAGE_kmod-usb3=y
 CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
 CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
-
-
-# USB storage
-
 CONFIG_PACKAGE_kmod-usb-storage=y
 CONFIG_PACKAGE_kmod-usb-storage-uas=y
-
 CONFIG_PACKAGE_block-mount=y
 
-
-# filesystem
-
 CONFIG_PACKAGE_kmod-fs-ext4=y
-CONFIG_PACKAGE_kmod-fs-vfat=y
 CONFIG_PACKAGE_kmod-fs-exfat=y
-
-
-# USB modem 4G/5G
-
-CONFIG_PACKAGE_kmod-usb-net=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
-CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
-
-CONFIG_PACKAGE_kmod-usb-serial=y
-CONFIG_PACKAGE_kmod-usb-serial-option=y
-CONFIG_PACKAGE_kmod-usb-wdm=y
-
-
-CONFIG_PACKAGE_usb-modeswitch=y
-
-CONFIG_PACKAGE_uqmi=y
-
-CONFIG_PACKAGE_umbim=y
-
-
-
-# PassWall
+CONFIG_PACKAGE_kmod-fs-vfat=y
 
 CONFIG_PACKAGE_luci-app-passwall=y
-
 CONFIG_PACKAGE_xray-core=y
-
 CONFIG_PACKAGE_sing-box=y
-
-CONFIG_PACKAGE_chinadns-ng=y
-
-CONFIG_PACKAGE_dns2socks=y
-
-CONFIG_PACKAGE_tcping=y
-
-
 CONFIG_PACKAGE_kmod-tun=y
-
 CONFIG_PACKAGE_kmod-nft-tproxy=y
 
-
-
-# MWAN3
-
 CONFIG_PACKAGE_mwan3=y
-
 CONFIG_PACKAGE_luci-app-mwan3=y
 
-
-
-# Samba4
-
 CONFIG_PACKAGE_samba4-server=y
-
 CONFIG_PACKAGE_luci-app-samba4=y
-
-
 EOF
 
+          make defconfig
 
 
-        make defconfig
+      - name: Check N30 Pro DTS
+        working-directory: immortalwrt
+        run: |
+          find target/linux/mediatek -iname "*n30*"
 
 
-
-    - name: Check target device
-
-      working-directory: immortalwrt
-
-      run: |
+      - name: Download
+        working-directory: immortalwrt
+        run: |
+          make download -j$(nproc)
 
 
-        echo "Checking Netcore N30 Pro target"
+      - name: Compile
+        working-directory: immortalwrt
+        run: |
+          make -j$(nproc) V=s
 
 
-        grep -R "Netcore N30" target/linux/mediatek/image || true
+      - name: Collect files
+        working-directory: immortalwrt
+        run: |
+          mkdir output
+
+          cp -a bin/targets output/
+          cp -a bin/packages output/
+          cp .config output/config
 
 
-        echo "Checking DTS"
-
-
-        find target/linux/mediatek -iname "*n30*"
-
-
-
-    - name: Download source packages
-
-      working-directory: immortalwrt
-
-      run: |
-
-
-        make download -j$(nproc)
-
-
-
-    - name: Compile firmware
-
-      working-directory: immortalwrt
-
-      run: |
-
-
-        make -j$(nproc) V=s
-
-
-
-    - name: Collect firmware and package repository
-
-      working-directory: immortalwrt
-
-      run: |
-
-
-        mkdir -p output
-
-
-
-        cp -a bin/targets output/
-
-
-        cp -a bin/packages output/
-
-
-        cp .config output/config
-
-
-
-        find bin/targets \
-        -name "*.manifest" \
-        -exec cp {} output/ \;
-
-
-
-        find bin/targets \
-        -name "*.sha256sums" \
-        -exec cp {} output/ \;
-
-
-
-    - name: Upload build result
-
-      uses: actions/upload-artifact@v4
-
-      with:
-
-        name: ImmortalWrt-25.12.2-Netcore-N30Pro
-
-        path: immortalwrt/output
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-25.12.2-N30Pro
+          path: immortalwrt/output
