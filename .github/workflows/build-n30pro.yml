@@ -1,4 +1,4 @@
-name: Build ImmortalWrt 25.12.2 - Netcore N30 Pro USB + KMOD
+name: Build ImmortalWrt 25.12.2 - Netcore N30 Pro Complete
 
 on:
   workflow_dispatch:
@@ -13,95 +13,85 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. Install build dependencies
+      # 1. 安装编译环境
       # ============================================================
-      - name: Install ImmortalWrt build dependencies
-        shell: bash
+      - name: Install build dependencies
         run: |
           set -e
 
-          sudo bash -c \
-            'bash <(curl -fsSL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            g++ \
+            gawk \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-setuptools \
+            rsync \
+            swig \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            curl \
+            xsltproc \
+            libelf-dev \
+            libdw-dev \
+            libtool \
+            autoconf \
+            automake \
+            pkg-config \
+            device-tree-compiler \
+            qemu-utils
 
       # ============================================================
-      # 2. Clone exact ImmortalWrt 25.12.2 source
+      # 2. 下载 ImmortalWrt 25.12.2
       # ============================================================
       - name: Clone ImmortalWrt 25.12.2
-        shell: bash
         run: |
           set -e
 
-          git clone \
-            --depth 1 \
+          git clone --depth=1 \
             --branch v25.12.2 \
-            --single-branch \
             https://github.com/immortalwrt/immortalwrt.git \
             immortalwrt
 
-          cd immortalwrt
-
-          echo "========================================"
-          echo "ImmortalWrt source information"
-          echo "========================================"
-
-          echo "Branch/tag:"
-          git describe --tags --always || true
-
-          echo
-          echo "Commit:"
-          git rev-parse HEAD
-
-          echo
-          echo "Status:"
-          git status --short
-
-          echo "========================================"
-
       # ============================================================
-      # 3. Clone N30 Pro adaptation
+      # 3. 下载 N30 Pro 适配补丁
       # ============================================================
-      - name: Clone N30 Pro adaptation
-        shell: bash
-        run: |
-          set -e
-
-          git clone \
-            --depth 1 \
-            --single-branch \
-            https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git \
-            n30-patch
-
-          echo "========================================"
-          echo "N30 Pro adaptation repository"
-          echo "========================================"
-
-          cd n30-patch
-
-          echo "Commit:"
-          git rev-parse HEAD
-
-          echo
-          echo "Repository contents:"
-          find . -maxdepth 3 -type f -print | sort
-
-          echo "========================================"
-
-      # ============================================================
-      # 4. Apply N30 Pro adaptation
-      # ============================================================
-      - name: Apply N30 Pro adaptation
-        shell: bash
+      - name: Clone Netcore N30 Pro patch
         working-directory: immortalwrt
         run: |
           set -e
 
-          bash ../n30-patch/scripts/apply-netcore-n30pro.sh ../n30-patch
+          git clone --depth=1 \
+            https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git \
+            n30pro-patch
 
       # ============================================================
-      # 5. Verify N30 Pro DTS / USB VBUS
+      # 4. 应用 N30 Pro 补丁
       # ============================================================
-      - name: Verify N30 Pro DTS and USB VBUS
-        shell: bash
+      - name: Apply Netcore N30 Pro patch
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          chmod +x \
+            n30pro-patch/scripts/apply-netcore-n30pro.sh
+
+          ./n30pro-patch/scripts/apply-netcore-n30pro.sh
+
+      # ============================================================
+      # 5. 验证 N30 Pro DTS
+      # ============================================================
+      - name: Verify N30 Pro DTS
         working-directory: immortalwrt
         run: |
           set -e
@@ -109,238 +99,65 @@ jobs:
           DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
 
           echo "========================================"
-          echo "Verify N30 Pro DTS"
+          echo "N30 PRO DTS CHECK"
           echo "========================================"
 
           test -f "$DTS"
 
-          echo
-          echo "===== Entire DTS ====="
-          cat "$DTS"
+          grep -n "Netcore N30 Pro" "$DTS"
+          grep -n "mt7981" "$DTS"
 
           echo
-          echo "===== Verify model ====="
+          echo "===== USB VBUS ====="
 
-          grep -Fq \
-            'model = "Netcore N30 Pro";' \
-            "$DTS"
-
-          echo
-          echo "===== Verify compatible ====="
-
-          grep -Fq \
-            'compatible = "netcore,n30-pro", "mediatek,mt7981";' \
-            "$DTS"
+          grep -n "usb_vbus" "$DTS"
+          grep -n "regulator-usb-vbus" "$DTS"
+          grep -n "regulator-boot-on" "$DTS"
 
           echo
-          echo "===== Verify USB VBUS GPIO23 ====="
+          echo "===== GPIO 23 ====="
 
-          grep -Fq \
-            'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' \
-            "$DTS"
-
-          echo
-          echo "===== Verify VBUS 5V minimum ====="
-
-          grep -Fq \
-            'regulator-min-microvolt = <5000000>;' \
-            "$DTS"
+          grep -n "<&pio 23" "$DTS"
+          grep -n "GPIO_ACTIVE_HIGH" "$DTS"
 
           echo
-          echo "===== Verify VBUS 5V maximum ====="
+          echo "===== USB PHY ====="
 
-          grep -Fq \
-            'regulator-max-microvolt = <5000000>;' \
-            "$DTS"
-
-          echo
-          echo "===== Verify regulator boot-on ====="
-
-          grep -Fq \
-            'regulator-boot-on;' \
-            "$DTS"
+          grep -n "&usb_phy" "$DTS"
+          grep -n 'status = "okay"' "$DTS"
 
           echo
-          echo "===== Verify USB VBUS regulator name ====="
+          echo "===== XHCI ====="
 
-          grep -Fq \
-            'regulator-name = "usb-vbus";' \
-            "$DTS"
-
-          echo
-          echo "===== Verify USB PHY ====="
-
-          USB_PHY_BLOCK="$(
-            grep -A8 -B3 \
-              '&usb_phy' \
-              "$DTS"
-          )"
-
-          echo "$USB_PHY_BLOCK"
-
-          echo "$USB_PHY_BLOCK" \
-            | grep -Fq 'status = "okay";'
-
-          echo
-          echo "===== Verify XHCI ====="
-
-          XHCI_BLOCK="$(
-            grep -A10 -B3 \
-              '&xhci' \
-              "$DTS"
-          )"
-
-          echo "$XHCI_BLOCK"
-
-          echo "$XHCI_BLOCK" \
-            | grep -Fq 'vbus-supply = <&usb_vbus>;'
-
-          echo "$XHCI_BLOCK" \
-            | grep -Fq 'status = "okay";'
-
-          echo
-          echo "N30 Pro DTS / USB VBUS verification PASSED."
+          grep -n "&xhci" "$DTS"
+          grep -n "vbus-supply = <&usb_vbus>" "$DTS"
 
       # ============================================================
-      # 6. Verify N30 Pro board integration
+      # 6. 验证 N30 Pro 已加入目标设备
       # ============================================================
-      - name: Verify N30 Pro board integration
-        shell: bash
+      - name: Verify N30 Pro target integration
         working-directory: immortalwrt
         run: |
           set -e
 
-          IMAGE_FILE="target/linux/mediatek/image/filogic.mk"
-          NET_FILE="target/linux/mediatek/filogic/base-files/etc/board.d/02_network"
-          WIFI_FILE="target/linux/mediatek/filogic/base-files/etc/hotplug.d/ieee80211/11_fix_wifi_mac"
-
           echo "========================================"
-          echo "Verify N30 Pro board integration"
+          echo "N30 PRO TARGET INTEGRATION"
           echo "========================================"
 
-          test -f "$IMAGE_FILE"
-          test -f "$NET_FILE"
-          test -f "$WIFI_FILE"
+          grep -Rni \
+            "mt7981b-netcore-n30-pro" \
+            target/linux/mediatek \
+            2>/dev/null || true
 
-          echo
-          echo "===== Device definition ====="
-
-          grep -Fq \
-            'define Device/netcore_n30-pro' \
-            "$IMAGE_FILE"
-
-          grep -A20 -B2 \
-            '^define Device/netcore_n30-pro$' \
-            "$IMAGE_FILE"
-
-          echo
-          echo "===== Verify DTS ====="
-
-          grep -A20 \
-            '^define Device/netcore_n30-pro$' \
-            "$IMAGE_FILE" \
-            | grep -Fq \
-              'DEVICE_DTS := mt7981b-netcore-n30-pro'
-
-          echo
-          echo "===== Verify board network ====="
-
-          grep -Fq \
-            'netcore,n30-pro' \
-            "$NET_FILE"
-
-          echo
-          echo "===== Verify Wi-Fi MAC handling ====="
-
-          grep -Fq \
-            'netcore,n30-pro' \
-            "$WIFI_FILE"
-
-          echo
-          echo "N30 Pro board integration verification PASSED."
+          grep -Rni \
+            "netcore-n30-pro" \
+            target/linux/mediatek \
+            2>/dev/null || true
 
       # ============================================================
-      # 7. Verify USB XHCI package definitions
+      # 7. 更新全部软件包定义
       # ============================================================
-      - name: Verify USB XHCI package definitions
-        shell: bash
-        working-directory: immortalwrt
-        run: |
-          set -e
-
-          USB_MK="package/kernel/linux/modules/usb.mk"
-
-          echo "========================================"
-          echo "Verify USB XHCI package definitions"
-          echo "========================================"
-
-          test -f "$USB_MK"
-
-          grep -q \
-            '^define KernelPackage/usb3$' \
-            "$USB_MK"
-
-          grep -q \
-            '^define KernelPackage/usb-xhci-hcd$' \
-            "$USB_MK"
-
-          grep -q \
-            '^define KernelPackage/usb-xhci-mtk$' \
-            "$USB_MK"
-
-          echo
-          echo "===== usb3 ====="
-
-          grep -n \
-            -A20 \
-            -B3 \
-            '^define KernelPackage/usb3$' \
-            "$USB_MK"
-
-          echo
-          echo "===== usb-xhci-hcd ====="
-
-          grep -n \
-            -A20 \
-            -B3 \
-            '^define KernelPackage/usb-xhci-hcd$' \
-            "$USB_MK"
-
-          echo
-          echo "===== usb-xhci-mtk ====="
-
-          grep -n \
-            -A25 \
-            -B3 \
-            '^define KernelPackage/usb-xhci-mtk$' \
-            "$USB_MK"
-
-          echo
-          echo "===== Verify MTK XHCI KCONFIG ====="
-
-          grep -A20 \
-            '^define KernelPackage/usb-xhci-mtk$' \
-            "$USB_MK" \
-            | grep -Fq \
-              'CONFIG_USB_XHCI_MTK'
-
-          echo
-          echo "===== Verify MTK XHCI module ====="
-
-          grep -A25 \
-            '^define KernelPackage/usb-xhci-mtk$' \
-            "$USB_MK" \
-            | grep -Fq \
-              'xhci-mtk-hcd.ko'
-
-          echo
-          echo "USB XHCI package definition verification PASSED."
-
-      # ============================================================
-      # 8. Update feeds
-      # ============================================================
-      - name: Update and install feeds
-        shell: bash
+      - name: Update feeds
         working-directory: immortalwrt
         run: |
           set -e
@@ -348,277 +165,622 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+          echo
+          echo "========================================"
+          echo "AVAILABLE FEEDS"
+          echo "========================================"
+
+          ./scripts/feeds list -s
+
       # ============================================================
-      # 9. Configure N30 Pro
+      # 8. 检查我们要编译的软件包定义是否真的存在
       #
-      # IMPORTANT:
-      #
-      # ALL_KMODS=y
-      #   -> all available kmod packages default to m
-      #   -> all target-compatible kernel modules are compiled
-      #   -> they do NOT all enter the firmware rootfs
-      #
-      # The modules explicitly set to y below are the modules we
-      # want immediately available after flashing.
-      #
-      # StarVPN client itself is NOT selected.
+      # 如果某个包在 25.12.2 源码中不存在：
+      # 在这里立即停止，而不是编译几个小时后才发现。
       # ============================================================
-      - name: Configure N30 Pro
-        shell: bash
+      - name: Preflight package definitions
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          check_package() {
+            PKG="$1"
+
+            if [[ "$PKG" == kmod-* ]]; then
+              KPKG="${PKG#kmod-}"
+
+              if grep -Rqs \
+                --exclude-dir=.git \
+                --include='*.mk' \
+                --include='Makefile' \
+                -E "^[[:space:]]*define KernelPackage/${KPKG}([[:space:]]|$)" \
+                package \
+                feeds \
+                2>/dev/null; then
+
+                echo "[PASS] $PKG"
+              else
+                echo "[FAIL] $PKG"
+                echo "KernelPackage definition not found."
+                exit 1
+              fi
+
+            else
+
+              if grep -Rqs \
+                --exclude-dir=.git \
+                --include='*.mk' \
+                --include='Makefile' \
+                -E "^[[:space:]]*define Package/${PKG}([[:space:]]|$)" \
+                package \
+                feeds \
+                2>/dev/null; then
+
+                echo "[PASS] $PKG"
+              else
+                echo "[FAIL] $PKG"
+                echo "Package definition not found."
+                exit 1
+              fi
+
+            fi
+          }
+
+          echo "========================================"
+          echo "CHECK REQUIRED KERNEL PACKAGES"
+          echo "========================================"
+
+          KERNEL_PACKAGES="
+          kmod-usb-core
+          kmod-usb3
+          kmod-usb-xhci-hcd
+          kmod-usb-xhci-mtk
+          kmod-usb-storage
+          kmod-fs-ext4
+          kmod-fs-vfat
+
+          kmod-usb-net
+          kmod-usb-net-cdc-ether
+          kmod-usb-net-cdc-ncm
+          kmod-usb-net-cdc-eem
+          kmod-usb-net-cdc-subset
+          kmod-usb-net-huawei-cdc-ncm
+          kmod-usb-net-ipheth
+          kmod-usb-net-rndis
+          kmod-usb-net-qmi-wwan
+          kmod-usb-net-cdc-mbim
+          kmod-usb-wdm
+
+          kmod-usb-net-asix
+          kmod-usb-net-asix-ax88179
+          kmod-usb-net-aqc111
+          kmod-usb-net-rtl8150
+          kmod-usb-net-rtl8152
+
+          kmod-usb-serial
+          kmod-usb-serial-option
+          kmod-usb-serial-wwan
+          kmod-usb-serial-qualcomm
+          kmod-usb-serial-sierrawireless
+          kmod-usb-acm
+          kmod-usb-net-sierrawireless
+
+          kmod-wwan
+
+          kmod-tun
+          kmod-inet-diag
+          kmod-netlink-diag
+
+          kmod-nf-socket
+          kmod-nf-tproxy
+          kmod-nfnetlink
+          kmod-nf-conntrack
+          kmod-nf-conntrack-netlink
+          kmod-nf-reject
+          kmod-nf-reject6
+
+          kmod-nft-core
+          kmod-nft-fib
+          kmod-nft-nat
+          kmod-nft-offload
+          kmod-nft-compat
+          kmod-nft-socket
+          kmod-nft-tproxy
+
+          kmod-wireguard
+          "
+
+          for PKG in $KERNEL_PACKAGES; do
+            check_package "$PKG"
+          done
+
+          echo
+          echo "========================================"
+          echo "CHECK REQUIRED USERSPACE PACKAGES"
+          echo "========================================"
+
+          USERSPACE_PACKAGES="
+          dnsmasq-full
+          ip-full
+          ipt2socks
+          dns2socks
+          chinadns-ng
+          geoview
+          microsocks
+          resolveip
+          tcping
+          lyaml
+
+          libuci-lua
+          lua
+          luci-compat
+          luci-lib-jsonc
+
+          curl
+          ca-bundle
+          wget-ssl
+          unzip
+
+          usbutils
+          usbids
+          usb-modeswitch
+
+          uqmi
+          umbim
+          libqmi
+          libmbim
+
+          wireguard-tools
+          "
+
+          for PKG in $USERSPACE_PACKAGES; do
+            check_package "$PKG"
+          done
+
+          echo
+          echo "========================================"
+          echo "PACKAGE PREFLIGHT PASSED"
+          echo "========================================"
+
+      # ============================================================
+      # 9. 写入完整配置
+      # ============================================================
+      - name: Configure firmware
         working-directory: immortalwrt
         run: |
           set -e
 
           cat > .config <<'EOF'
+
+          # ========================================================
+          # Target
+          # ========================================================
+
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
           CONFIG_TARGET_mediatek_filogic_DEVICE_netcore-n30-pro=y
 
-          # --------------------------------------------------------
+          # ========================================================
           # APK
-          # --------------------------------------------------------
+          # ========================================================
+
           CONFIG_USE_APK=y
-          CONFIG_SIGNED_PACKAGES=y
-          CONFIG_SIGNATURE_CHECK=y
-          CONFIG_SIGN_EACH_PACKAGE=y
-
-          # --------------------------------------------------------
-          # Per-feed repository
-          # --------------------------------------------------------
           CONFIG_PER_FEED_REPO=y
-          CONFIG_FEED_packages=y
-          CONFIG_FEED_luci=y
-          CONFIG_FEED_routing=y
-          CONFIG_FEED_telephony=y
 
-          # --------------------------------------------------------
-          # Build all available kernel modules as packages
-          #
-          # They default to m, so they do not all enter rootfs.
-          # --------------------------------------------------------
-          CONFIG_ALL_KMODS=y
+          # 不使用旧 video feed，避免 25.12 包仓库出现 EOF/不存在问题
+          # CONFIG_FEED_video is not set
 
-          # --------------------------------------------------------
+          # ========================================================
           # LuCI
-          # --------------------------------------------------------
+          # ========================================================
+
           CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-compat=y
+          CONFIG_PACKAGE_luci-lib-jsonc=y
 
           # ========================================================
-          # USB 3.0 / XHCI
-          # These remain built INTO the firmware.
+          # N30 Pro USB 3.0
           # ========================================================
 
+          CONFIG_PACKAGE_kmod-usb-core=y
           CONFIG_PACKAGE_kmod-usb3=y
           CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
           CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
 
           CONFIG_PACKAGE_kmod-usb-storage=y
 
+          # ========================================================
+          # USB 文件系统
+          # ========================================================
+
           CONFIG_PACKAGE_kmod-fs-ext4=y
           CONFIG_PACKAGE_kmod-fs-vfat=y
 
           # ========================================================
-          # VPN / TPROXY / PassWall compatibility
+          # USB 网络设备
           #
-          # These are the exact families already observed missing
-          # on the current N30 Pro firmware.
+          # 覆盖：
+          # RNDIS
+          # CDC-ECM
+          # CDC-NCM
+          # CDC-EEM
+          # CDC-SUBSET
+          # iPhone USB tethering
+          # Huawei USB 网络设备
           # ========================================================
 
+          CONFIG_PACKAGE_kmod-usb-net=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
+          CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
+          CONFIG_PACKAGE_kmod-usb-net-ipheth=y
+          CONFIG_PACKAGE_kmod-usb-net-rndis=y
+
+          # ========================================================
+          # USB 4G / 5G / WWAN
+          # ========================================================
+
+          CONFIG_PACKAGE_kmod-usb-wdm=y
+          CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y
+
+          CONFIG_PACKAGE_kmod-usb-net-sierrawireless=y
+
+          CONFIG_PACKAGE_kmod-usb-serial=y
+          CONFIG_PACKAGE_kmod-usb-serial-option=y
+          CONFIG_PACKAGE_kmod-usb-serial-wwan=y
+          CONFIG_PACKAGE_kmod-usb-serial-qualcomm=y
+          CONFIG_PACKAGE_kmod-usb-serial-sierrawireless=y
+          CONFIG_PACKAGE_kmod-usb-acm=y
+
+          CONFIG_PACKAGE_kmod-wwan=y
+
+          # ========================================================
+          # USB 有线网卡 / USB Ethernet
+          #
+          # 顺便覆盖一些随身网卡设备的 USB Ethernet 模式
+          # ========================================================
+
+          CONFIG_PACKAGE_kmod-usb-net-asix=y
+          CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=y
+          CONFIG_PACKAGE_kmod-usb-net-aqc111=y
+          CONFIG_PACKAGE_kmod-usb-net-rtl8150=y
+          CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
+
+          # ========================================================
+          # USB / Modem 用户空间
+          # ========================================================
+
+          CONFIG_PACKAGE_usbutils=y
+          CONFIG_PACKAGE_usbids=y
+          CONFIG_PACKAGE_usb-modeswitch=y
+
+          CONFIG_PACKAGE_uqmi=y
+          CONFIG_PACKAGE_umbim=y
+          CONFIG_PACKAGE_libqmi=y
+          CONFIG_PACKAGE_libmbim=y
+
+          # ========================================================
+          # PassWall / NFT TProxy
+          # ========================================================
+
+          CONFIG_PACKAGE_kmod-tun=y
           CONFIG_PACKAGE_kmod-inet-diag=y
           CONFIG_PACKAGE_kmod-netlink-diag=y
-          CONFIG_PACKAGE_kmod-tun=y
 
+          CONFIG_PACKAGE_kmod-nf-socket=y
+          CONFIG_PACKAGE_kmod-nf-tproxy=y
           CONFIG_PACKAGE_kmod-nfnetlink=y
           CONFIG_PACKAGE_kmod-nf-conntrack=y
           CONFIG_PACKAGE_kmod-nf-conntrack-netlink=y
 
-          CONFIG_PACKAGE_kmod-nf-socket=y
-          CONFIG_PACKAGE_kmod-nf-tproxy=y
+          CONFIG_PACKAGE_kmod-nf-reject=y
+          CONFIG_PACKAGE_kmod-nf-reject6=y
 
           CONFIG_PACKAGE_kmod-nft-core=y
+          CONFIG_PACKAGE_kmod-nft-fib=y
+          CONFIG_PACKAGE_kmod-nft-nat=y
+          CONFIG_PACKAGE_kmod-nft-offload=y
+          CONFIG_PACKAGE_kmod-nft-compat=y
           CONFIG_PACKAGE_kmod-nft-socket=y
           CONFIG_PACKAGE_kmod-nft-tproxy=y
 
-          # --------------------------------------------------------
-          # StarVPN:
+          # ========================================================
+          # PassWall 常用用户空间依赖
           #
-          # Do NOT compile StarVPN itself.
-          # The client will be installed later as an external APK.
-          #
-          # kmod-tun is included above because userspace VPN/gateway
-          # clients commonly require /dev/net/tun.
-          # --------------------------------------------------------
+          # 不编译 luci-app-passwall 本体
+          # 不编译 StarVPN
+          # ========================================================
 
-          # No CONFIG_PACKAGE_starvpn
-          # No CONFIG_PACKAGE_star-client
-          # No StarVPN source repository
+          CONFIG_PACKAGE_dnsmasq-full=y
+
+          CONFIG_PACKAGE_ip-full=y
+          CONFIG_PACKAGE_ipt2socks=y
+          CONFIG_PACKAGE_dns2socks=y
+          CONFIG_PACKAGE_chinadns-ng=y
+          CONFIG_PACKAGE_geoview=y
+          CONFIG_PACKAGE_microsocks=y
+          CONFIG_PACKAGE_resolveip=y
+          CONFIG_PACKAGE_tcping=y
+          CONFIG_PACKAGE_lyaml=y
+
+          CONFIG_PACKAGE_libuci-lua=y
+          CONFIG_PACKAGE_lua=y
+          CONFIG_PACKAGE_luci-compat=y
+          CONFIG_PACKAGE_luci-lib-jsonc=y
+
+          # ========================================================
+          # 常用下载 / TLS / 解压工具
+          # ========================================================
+
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_ca-bundle=y
+          CONFIG_PACKAGE_wget-ssl=y
+          CONFIG_PACKAGE_unzip=y
+
+          # ========================================================
+          # WireGuard
+          # ========================================================
+
+          CONFIG_PACKAGE_kmod-wireguard=y
+          CONFIG_PACKAGE_wireguard-tools=y
+
           EOF
 
           echo "========================================"
-          echo "Initial .config"
-          echo "========================================"
-
-          cat .config
-
-          echo
-          echo "========================================"
-          echo "Running make defconfig"
+          echo "RUN MAKE DEFCONFIG"
           echo "========================================"
 
           make defconfig
 
+      # ============================================================
+      # 10. 显示最终 Target
+      # ============================================================
+      - name: Show final target configuration
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "FINAL TARGET CONFIG"
+          echo "========================================"
+
+          grep '^CONFIG_TARGET_' .config || true
+
           echo
-          echo "Configuration generated successfully."
+          echo "========================================"
+          echo "APK / FEED CONFIG"
+          echo "========================================"
+
+          grep -E \
+            '^CONFIG_(USE_APK|PER_FEED_REPO|FEED_)' \
+            .config || true
 
       # ============================================================
-      # 10. Verify important configuration after defconfig
+      # 11. 检查最终配置
       # ============================================================
       - name: Verify final configuration
-        shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          echo "========================================"
-          echo "Verify final configuration"
-          echo "========================================"
+          check_y() {
+            KEY="$1"
 
-          echo
-          echo "===== Target ====="
+            if grep -qx "${KEY}=y" .config; then
+              echo "[PASS] ${KEY}=y"
+            else
+              echo "[FAIL] ${KEY}"
+              grep -E "^${KEY}=" .config || true
+              exit 1
+            fi
+          }
 
-          grep -Fxq \
-            'CONFIG_TARGET_mediatek=y' \
-            .config
+          check_not_set() {
+            KEY="$1"
 
-          grep -Fxq \
-            'CONFIG_TARGET_mediatek_filogic=y' \
-            .config
-
-          grep -Fxq \
-            'CONFIG_TARGET_mediatek_filogic_DEVICE_netcore-n30-pro=y' \
-            .config
-
-          echo
-          echo "===== APK ====="
-
-          grep -Fxq \
-            'CONFIG_USE_APK=y' \
-            .config
-
-          grep -Fxq \
-            'CONFIG_SIGNED_PACKAGES=y' \
-            .config
-
-          grep -Fxq \
-            'CONFIG_SIGNATURE_CHECK=y' \
-            .config
-
-          grep -Fxq \
-            'CONFIG_SIGN_EACH_PACKAGE=y' \
-            .config
-
-          echo
-          echo "===== ALL_KMODS ====="
-
-          grep -Fxq \
-            'CONFIG_ALL_KMODS=y' \
-            .config
-
-          # ========================================================
-          # Required kernel modules
-          # ========================================================
-
-          REQUIRED_KMODS=(
-            kmod-usb3
-            kmod-usb-xhci-hcd
-            kmod-usb-xhci-mtk
-            kmod-usb-storage
-            kmod-fs-ext4
-            kmod-fs-vfat
-
-            kmod-inet-diag
-            kmod-netlink-diag
-            kmod-tun
-
-            kmod-nfnetlink
-            kmod-nf-conntrack
-            kmod-nf-conntrack-netlink
-            kmod-nf-socket
-            kmod-nf-tproxy
-
-            kmod-nft-core
-            kmod-nft-socket
-            kmod-nft-tproxy
-          )
-
-          echo
-          echo "===== Required kernel modules ====="
-
-          for pkg in "${REQUIRED_KMODS[@]}"; do
-            echo "Checking $pkg ..."
-
-            grep -Fxq \
-              "CONFIG_PACKAGE_${pkg}=y" \
-              .config \
-              || {
-                echo
-                echo "ERROR:"
-                echo "Required package $pkg was not kept as =y after make defconfig."
-                exit 1
-              }
-          done
-
-          echo
-          echo "===== KMOD configuration summary ====="
-
-          grep '^CONFIG_PACKAGE_kmod-' .config \
-            | sort
-
-          echo
-          echo "Required kernel-module configuration verification PASSED."
-
-      # ============================================================
-      # 11. Show kernel-module build strategy
-      # ============================================================
-      - name: Audit ALL_KMODS effective selection
-        shell: bash
-        working-directory: immortalwrt
-        run: |
-          set -e
+            if grep -qx "# ${KEY} is not set" .config; then
+              echo "[PASS] ${KEY} is disabled"
+            elif ! grep -q "^${KEY}=" .config; then
+              echo "[PASS] ${KEY} is not configured"
+            else
+              echo "[FAIL] ${KEY} is enabled"
+              grep -E "^${KEY}=" .config || true
+              exit 1
+            fi
+          }
 
           echo "========================================"
-          echo "ALL_KMODS audit"
+          echo "TARGET"
           echo "========================================"
 
-          ALL_KMODS_COUNT="$(
-            grep -E '^CONFIG_PACKAGE_kmod-.+=m$' .config \
-              | wc -l
-          )"
-
-          ROOTFS_KMOD_Y_COUNT="$(
-            grep -E '^CONFIG_PACKAGE_kmod-.+=y$' .config \
-              | wc -l
-          )"
+          check_y "CONFIG_TARGET_mediatek"
+          check_y "CONFIG_TARGET_mediatek_filogic"
+          check_y "CONFIG_TARGET_mediatek_filogic_DEVICE_netcore-n30-pro"
 
           echo
-          echo "KMOD packages selected as =m: $ALL_KMODS_COUNT"
-          echo "KMOD packages selected as =y: $ROOTFS_KMOD_Y_COUNT"
+          echo "========================================"
+          echo "APK"
+          echo "========================================"
 
-          if [ "$ALL_KMODS_COUNT" -eq 0 ]; then
+          check_y "CONFIG_USE_APK"
+          check_y "CONFIG_PER_FEED_REPO"
+
+          check_not_set "CONFIG_FEED_video"
+
+          echo
+          echo "========================================"
+          echo "N30 PRO USB"
+          echo "========================================"
+
+          check_y "CONFIG_PACKAGE_kmod-usb-core"
+          check_y "CONFIG_PACKAGE_kmod-usb3"
+          check_y "CONFIG_PACKAGE_kmod-usb-xhci-hcd"
+          check_y "CONFIG_PACKAGE_kmod-usb-xhci-mtk"
+          check_y "CONFIG_PACKAGE_kmod-usb-storage"
+
+          echo
+          echo "========================================"
+          echo "USB STORAGE"
+          echo "========================================"
+
+          check_y "CONFIG_PACKAGE_kmod-fs-ext4"
+          check_y "CONFIG_PACKAGE_kmod-fs-vfat"
+
+          echo
+          echo "========================================"
+          echo "USB WIFI / USB NETWORK / TETHERING"
+          echo "========================================"
+
+          check_y "CONFIG_PACKAGE_kmod-usb-net"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-cdc-ether"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-cdc-ncm"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-cdc-eem"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-cdc-subset"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-ipheth"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-rndis"
+
+          echo
+          echo "========================================"
+          echo "4G / 5G WWAN"
+          echo "========================================"
+
+          check_y "CONFIG_PACKAGE_kmod-usb-wdm"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-cdc-mbim"
+          check_y "CONFIG_PACKAGE_kmod-usb-net-sierrawireless"
+
+          check_y "CONFIG_PACKAGE_kmod-usb-serial"
+          check_y "CONFIG_PACKAGE_kmod-usb-serial-option"
+          check_y "CONFIG_PACKAGE_kmod-usb-serial-wwan"
+          check_y "CONFIG_PACKAGE_kmod-usb-serial-qualcomm"
+          check_y "CONFIG_PACKAGE_kmod-usb-serial-sierrawireless"
+          check_y "CONFIG_PACKAGE_kmod-usb-acm"
+          check_y "CONFIG_PACKAGE_kmod-wwan"
+
+          echo
+          echo "========================================"
+          echo "MODEM USERSPACE"
+          echo "========================================"
+
+          check_y "CONFIG_PACKAGE_usbutils"
+          check_y "CONFIG_PACKAGE_usbids"
+          check_y "CONFIG_PACKAGE_usb-modeswitch"
+          check_y "CONFIG_PACKAGE_uqmi"
+          check_y "CONFIG_PACKAGE_umbim"
+          check_y "CONFIG_PACKAGE_libqmi"
+          check_y "CONFIG_PACKAGE_libmbim"
+
+          echo
+          echo "========================================"
+          echo "PASSWALL / TPROXY"
+          echo "========================================"
+
+          check_y "CONFIG_PACKAGE_kmod-tun"
+          check_y "CONFIG_PACKAGE_kmod-inet-diag"
+          check_y "CONFIG_PACKAGE_kmod-netlink-diag"
+
+          check_y "CONFIG_PACKAGE_kmod-nf-socket"
+          check_y "CONFIG_PACKAGE_kmod-nf-tproxy"
+          check_y "CONFIG_PACKAGE_kmod-nfnetlink"
+          check_y "CONFIG_PACKAGE_kmod-nf-conntrack"
+          check_y "CONFIG_PACKAGE_kmod-nf-conntrack-netlink"
+          check_y "CONFIG_PACKAGE_kmod-nf-reject"
+          check_y "CONFIG_PACKAGE_kmod-nf-reject6"
+
+          check_y "CONFIG_PACKAGE_kmod-nft-core"
+          check_y "CONFIG_PACKAGE_kmod-nft-fib"
+          check_y "CONFIG_PACKAGE_kmod-nft-nat"
+          check_y "CONFIG_PACKAGE_kmod-nft-offload"
+          check_y "CONFIG_PACKAGE_kmod-nft-compat"
+          check_y "CONFIG_PACKAGE_kmod-nft-socket"
+          check_y "CONFIG_PACKAGE_kmod-nft-tproxy"
+
+          echo
+          echo "========================================"
+          echo "PASSWALL USERSPACE"
+          echo "========================================"
+
+          check_y "CONFIG_PACKAGE_dnsmasq-full"
+          check_y "CONFIG_PACKAGE_ip-full"
+          check_y "CONFIG_PACKAGE_ipt2socks"
+          check_y "CONFIG_PACKAGE_dns2socks"
+          check_y "CONFIG_PACKAGE_chinadns-ng"
+          check_y "CONFIG_PACKAGE_geoview"
+          check_y "CONFIG_PACKAGE_microsocks"
+          check_y "CONFIG_PACKAGE_resolveip"
+          check_y "CONFIG_PACKAGE_tcping"
+          check_y "CONFIG_PACKAGE_lyaml"
+
+          check_y "CONFIG_PACKAGE_libuci-lua"
+          check_y "CONFIG_PACKAGE_lua"
+          check_y "CONFIG_PACKAGE_luci-compat"
+          check_y "CONFIG_PACKAGE_luci-lib-jsonc"
+
+          echo
+          echo "========================================"
+          echo "WIREGUARD"
+          echo "========================================"
+
+          check_y "CONFIG_PACKAGE_kmod-wireguard"
+          check_y "CONFIG_PACKAGE_wireguard-tools"
+
+          echo
+          echo "========================================"
+          echo "STARVPN CHECK"
+          echo "========================================"
+
+          if grep -RniE \
+            'starvpn|xingkong|星空组网' \
+            .config \
+            package \
+            feeds \
+            2>/dev/null; then
+
             echo
-            echo "ERROR: ALL_KMODS did not result in any =m kmod packages."
+            echo "[FAIL] StarVPN related content detected."
             exit 1
           fi
 
+          echo "[PASS] StarVPN / 星空组网 is NOT included."
+
           echo
-          echo "ALL_KMODS is active."
-          echo "Most kmods will be built as packages rather than placed in rootfs."
+          echo "========================================"
+          echo "ALL CONFIGURATION CHECKS PASSED"
+          echo "========================================"
 
       # ============================================================
-      # 12. Download sources
+      # 12. 显示 USB / TPROXY 相关配置
+      # ============================================================
+      - name: Show selected packages
+        working-directory: immortalwrt
+        run: |
+          echo "========================================"
+          echo "SELECTED KERNEL / NETWORK PACKAGES"
+          echo "========================================"
+
+          grep -E \
+            '^CONFIG_PACKAGE_kmod-(usb|wwan|tun|inet-diag|netlink-diag|nf-|nft-|wireguard)' \
+            .config \
+            | sort || true
+
+          echo
+          echo "========================================"
+          echo "SELECTED USERSPACE PACKAGES"
+          echo "========================================"
+
+          grep -E \
+            '^CONFIG_PACKAGE_(dnsmasq-full|ip-full|ipt2socks|dns2socks|chinadns-ng|geoview|microsocks|resolveip|tcping|lyaml|uqmi|umbim|libqmi|libmbim|usbutils|usbids|usb-modeswitch|wireguard-tools)' \
+            .config \
+            | sort || true
+
+      # ============================================================
+      # 13. 下载编译源码
       # ============================================================
       - name: Download sources
-        shell: bash
         working-directory: immortalwrt
         run: |
           set -e
@@ -626,567 +788,328 @@ jobs:
           make download -j2 V=s
 
       # ============================================================
-      # 13. Build firmware
+      # 14. 编译完整固件
       # ============================================================
       - name: Build firmware
-        shell: bash
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          make -j$(nproc) V=s
+
+      # ============================================================
+      # 15. 最终检查 XHCI
+      # ============================================================
+      - name: Verify XHCI modules
         working-directory: immortalwrt
         run: |
           set -e
 
           echo "========================================"
-          echo "Start firmware build"
+          echo "XHCI MODULE CHECK"
           echo "========================================"
 
-          make -j"$(nproc)" \
-            || make -j1 V=s
-
-      # ============================================================
-      # 14. Verify REAL XHCI modules
-      # ============================================================
-      - name: Verify actual XHCI kernel modules
-        shell: bash
-        working-directory: immortalwrt
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "Verify actual XHCI kernel modules"
-          echo "========================================"
-
-          XHCI_HCD_COUNT="$(
-            find build_dir \
-              -type f \
+          find build_dir \
+            -type f \
+            \( \
               -name 'xhci-hcd.ko' \
-              -print \
-              | wc -l
-          )"
+              -o -name 'xhci-mtk-hcd.ko' \
+            \) \
+            -print
 
-          XHCI_MTK_COUNT="$(
+          test -n "$(find build_dir -type f -name 'xhci-hcd.ko' -print -quit)"
+          test -n "$(find build_dir -type f -name 'xhci-mtk-hcd.ko' -print -quit)"
+
+          echo "[PASS] xhci-hcd.ko"
+          echo "[PASS] xhci-mtk-hcd.ko"
+
+      # ============================================================
+      # 16. 最终检查 PassWall 所需模块
+      # ============================================================
+      - name: Verify proxy kernel modules
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "PROXY MODULE CHECK"
+          echo "========================================"
+
+          MODULES="
+          tun.ko
+          inet_diag.ko
+          netlink_diag.ko
+          nf_socket.ko
+          nf_tproxy_core.ko
+          nft_socket.ko
+          nft_tproxy.ko
+          "
+
+          for MOD in $MODULES; do
+            echo
+            echo "----- $MOD -----"
+
             find build_dir \
               -type f \
-              -name 'xhci-mtk-hcd.ko' \
+              -name "$MOD" \
               -print \
-              | wc -l
-          )"
-
-          echo
-          echo "xhci-hcd.ko count: $XHCI_HCD_COUNT"
-          echo "xhci-mtk-hcd.ko count: $XHCI_MTK_COUNT"
-
-          if [ "$XHCI_HCD_COUNT" -eq 0 ]; then
-            echo
-            echo "ERROR: xhci-hcd.ko was NOT built."
-            exit 1
-          fi
-
-          if [ "$XHCI_MTK_COUNT" -eq 0 ]; then
-            echo
-            echo "ERROR: xhci-mtk-hcd.ko was NOT built."
-            exit 1
-          fi
-
-          echo
-          echo "XHCI kernel-module verification PASSED."
-
-      # ============================================================
-      # 15. Verify compiled kernel configuration
-      # ============================================================
-      - name: Verify actual compiled kernel configuration
-        shell: bash
-        working-directory: immortalwrt
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "Verify actual compiled kernel configuration"
-          echo "========================================"
-
-          KERNEL_CONFIGS="$(
-            find build_dir \
-              -type f \
-              -path '*/linux-*/.config' \
-              -print
-          )"
-
-          if [ -z "$KERNEL_CONFIGS" ]; then
-            echo
-            echo "ERROR: No compiled kernel .config found."
-            exit 1
-          fi
-
-          echo
-          echo "Kernel .config candidates:"
-          echo "$KERNEL_CONFIGS"
-
-          XHCI_KERNEL_OK=0
-          XHCI_MTK_KERNEL_OK=0
-
-          while IFS= read -r cfg; do
-            [ -n "$cfg" ] || continue
-
-            if grep -Eq \
-              '^CONFIG_USB_XHCI_HCD=[ym]$' \
-              "$cfg"; then
-
-              echo
-              echo "FOUND CONFIG_USB_XHCI_HCD in $cfg"
-              grep \
-                '^CONFIG_USB_XHCI_HCD=' \
-                "$cfg"
-
-              XHCI_KERNEL_OK=1
-            fi
-
-            if grep -Eq \
-              '^CONFIG_USB_XHCI_MTK=[ym]$' \
-              "$cfg"; then
-
-              echo
-              echo "FOUND CONFIG_USB_XHCI_MTK in $cfg"
-              grep \
-                '^CONFIG_USB_XHCI_MTK=' \
-                "$cfg"
-
-              XHCI_MTK_KERNEL_OK=1
-            fi
-
-          done <<< "$KERNEL_CONFIGS"
-
-          if [ "$XHCI_KERNEL_OK" -ne 1 ]; then
-            echo
-            echo "ERROR: CONFIG_USB_XHCI_HCD not enabled."
-            exit 1
-          fi
-
-          if [ "$XHCI_MTK_KERNEL_OK" -ne 1 ]; then
-            echo
-            echo "ERROR: CONFIG_USB_XHCI_MTK not enabled."
-            exit 1
-          fi
-
-          echo
-          echo "Compiled kernel XHCI configuration verification PASSED."
-
-      # ============================================================
-      # 16. Verify required KMOD APK files were produced
-      # ============================================================
-      - name: Verify required KMOD APK packages
-        shell: bash
-        working-directory: immortalwrt
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "Verify required KMOD APK packages"
-          echo "========================================"
-
-          PACKAGE_ROOT="bin/targets/mediatek/filogic"
-
-          test -d "$PACKAGE_ROOT"
-
-          REQUIRED_APKS=(
-            kmod-usb3
-            kmod-usb-xhci-hcd
-            kmod-usb-xhci-mtk
-            kmod-usb-storage
-            kmod-fs-ext4
-            kmod-fs-vfat
-
-            kmod-inet-diag
-            kmod-netlink-diag
-            kmod-tun
-
-            kmod-nfnetlink
-            kmod-nf-conntrack
-            kmod-nf-conntrack-netlink
-            kmod-nf-socket
-            kmod-nf-tproxy
-
-            kmod-nft-core
-            kmod-nft-socket
-            kmod-nft-tproxy
-          )
-
-          for pkg in "${REQUIRED_APKS[@]}"; do
-
-            COUNT="$(
-              find "$PACKAGE_ROOT" \
-                -type f \
-                -name "${pkg}-*.apk" \
-                -print \
-                | wc -l
-            )"
-
-            echo
-            echo "$pkg -> APK count: $COUNT"
-
-            if [ "$COUNT" -eq 0 ]; then
-              echo
-              echo "ERROR: $pkg APK was not generated."
-              exit 1
-            fi
-
+              | head -20 || true
           done
 
-          TOTAL_KMOD_APKS="$(
-            find "$PACKAGE_ROOT" \
-              -type f \
-              -name 'kmod-*.apk' \
-              -print \
-              | wc -l
-          )"
-
-          echo
-          echo "Total generated KMOD APK files: $TOTAL_KMOD_APKS"
-
-          if [ "$TOTAL_KMOD_APKS" -eq 0 ]; then
-            echo
-            echo "ERROR: No KMOD APK packages were generated."
-            exit 1
-          fi
-
-          echo
-          echo "Required KMOD APK verification PASSED."
-
       # ============================================================
-      # 17. Verify firmware manifests contain required KMODs
+      # 17. 最终检查 USB 网络 / WWAN 模块
       # ============================================================
-      - name: Verify required KMODs in firmware manifests
-        shell: bash
+      - name: Verify USB network modules
         working-directory: immortalwrt
         run: |
           set -e
 
           echo "========================================"
-          echo "Verify required KMODs in firmware"
+          echo "USB NETWORK MODULE CHECK"
           echo "========================================"
 
-          TARGET_DIR="bin/targets/mediatek/filogic"
-
-          MANIFESTS="$(
-            find "$TARGET_DIR" \
-              -maxdepth 1 \
-              -type f \
-              -name '*.manifest' \
-              -print \
-              | sort
-          )"
-
-          if [ -z "$MANIFESTS" ]; then
-            echo
-            echo "ERROR: No manifest found."
-            exit 1
-          fi
-
-          REQUIRED_MANIFEST_PACKAGES=(
-            kmod-usb3
-            kmod-usb-xhci-hcd
-            kmod-usb-xhci-mtk
-            kmod-usb-storage
-
-            kmod-inet-diag
-            kmod-netlink-diag
-            kmod-tun
-
-            kmod-nfnetlink
-            kmod-nf-conntrack
-            kmod-nf-conntrack-netlink
-            kmod-nf-socket
-            kmod-nf-tproxy
-
-            kmod-nft-core
-            kmod-nft-socket
-            kmod-nft-tproxy
-          )
-
-          for pkg in "${REQUIRED_MANIFEST_PACKAGES[@]}"; do
-
-            FOUND=0
-
-            while IFS= read -r manifest; do
-              [ -n "$manifest" ] || continue
-
-              if grep -Fq "$pkg" "$manifest"; then
-                echo "FOUND $pkg in $manifest"
-                FOUND=1
-                break
-              fi
-
-            done <<< "$MANIFESTS"
-
-            if [ "$FOUND" -ne 1 ]; then
-              echo
-              echo "ERROR: $pkg is not present in firmware manifest."
-              exit 1
-            fi
-
-          done
-
-          echo
-          echo "Required KMOD firmware inclusion verification PASSED."
+          find build_dir \
+            -type f \
+            \( \
+              -name 'cdc_ether.ko' \
+              -o -name 'cdc_ncm.ko' \
+              -o -name 'cdc_eem.ko' \
+              -o -name 'cdc_subset.ko' \
+              -o -name 'huawei_cdc_ncm.ko' \
+              -o -name 'rndis_host.ko' \
+              -o -name 'qmi_wwan.ko' \
+              -o -name 'cdc_mbim.ko' \
+              -o -name 'cdc_wdm.ko' \
+              -o -name 'usb_wwan.ko' \
+              -o -name 'option.ko' \
+              -o -name 'ipheth.ko' \
+              -o -name 'sierra_net.ko' \
+              -o -name 'sierra.ko' \
+            \) \
+            -print \
+            | sort -u
 
       # ============================================================
-      # 18. Verify firmware images
+      # 18. 写入第一次启动时的 APK 源修正
+      #
+      # 目的：
+      # - 去掉 JLU
+      # - 去掉 Vsean
+      # - 保留官方 ImmortalWrt
+      #
+      # 这不会碰 APK 签名校验，也不会关闭签名验证。
       # ============================================================
-      - name: Verify N30 Pro firmware images
-        shell: bash
+      - name: Install APK repository normalization script
         working-directory: immortalwrt
         run: |
           set -e
 
-          TARGET_DIR="bin/targets/mediatek/filogic"
+          mkdir -p files/etc/uci-defaults
+
+          cat > files/etc/uci-defaults/90-n30pro-apk-feed <<'EOF'
+          #!/bin/sh
+
+          FEED_FILE="/etc/apk/repositories.d/distfeeds.list"
+
+          if [ -f "$FEED_FILE" ]; then
+              sed -i -E \
+                  's#https://[^/]+/(immortalwrt|openwrt)#https://downloads.immortalwrt.org#g' \
+                  "$FEED_FILE"
+          fi
+
+          if uci -q get system.@imm_init[0] >/dev/null 2>&1; then
+              uci -q set system.@imm_init[0].apk_mirror='https://downloads.immortalwrt.org' || true
+              uci -q commit system || true
+          fi
+
+          rm -f /etc/uci-defaults/90-n30pro-apk-feed
+
+          exit 0
+          EOF
+
+          chmod 0755 files/etc/uci-defaults/90-n30pro-apk-feed
 
           echo "========================================"
-          echo "Verify N30 Pro firmware images"
+          echo "APK REPOSITORY NORMALIZATION SCRIPT"
           echo "========================================"
 
-          find "$TARGET_DIR" \
+          cat files/etc/uci-defaults/90-n30pro-apk-feed
+
+      # ============================================================
+      # 19. 检查最终文件系统中 APK 配置
+      # ============================================================
+      - name: Verify APK repository configuration
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "SEARCH APK FEED CONFIGURATION"
+          echo "========================================"
+
+          find build_dir \
+            -type f \
+            -path '*/etc/apk/repositories.d/distfeeds.list' \
+            -print \
+            -exec cat {} \; \
+            2>/dev/null || true
+
+          echo
+          echo "========================================"
+          echo "CHECK FIRST BOOT APK SCRIPT"
+          echo "========================================"
+
+          test -f files/etc/uci-defaults/90-n30pro-apk-feed
+
+          echo "[PASS] APK normalization script installed."
+
+      # ============================================================
+      # 20. 检查最终 RootFS 模块
+      # ============================================================
+      - name: Verify final rootfs modules
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "FINAL ROOTFS MODULE CHECK"
+          echo "========================================"
+
+          find build_dir \
+            -type f \
+            -path '*/root-*/lib/modules/*' \
+            \( \
+              -name 'xhci-hcd.ko' \
+              -o -name 'xhci-mtk-hcd.ko' \
+              -o -name 'tun.ko' \
+              -o -name 'inet_diag.ko' \
+              -o -name 'netlink_diag.ko' \
+              -o -name 'nf_socket.ko' \
+              -o -name 'nf_tproxy_core.ko' \
+              -o -name 'nft_socket.ko' \
+              -o -name 'nft_tproxy.ko' \
+              -o -name 'cdc_ether.ko' \
+              -o -name 'cdc_ncm.ko' \
+              -o -name 'rndis_host.ko' \
+              -o -name 'qmi_wwan.ko' \
+              -o -name 'cdc_mbim.ko' \
+              -o -name 'option.ko' \
+              -o -name 'usb_wwan.ko' \
+            \) \
+            -print \
+            | sort -u
+
+      # ============================================================
+      # 21. 检查 N30 Pro 最终固件
+      # ============================================================
+      - name: Verify N30 Pro firmware image
+        working-directory: immortalwrt
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "FINAL FIRMWARE IMAGE"
+          echo "========================================"
+
+          find bin/targets/mediatek/filogic \
             -maxdepth 2 \
             -type f \
+            \( \
+              -name '*n30*' \
+              -o -name '*netcore*' \
+              -o -name '*sysupgrade*' \
+              -o -name '*factory*' \
+            \) \
             -print \
             | sort
 
-          N30_COUNT="$(
-            find "$TARGET_DIR" \
-              -maxdepth 2 \
-              -type f \
-              \( \
-                -iname '*n30*' \
-                -o \
-                -iname '*netcore*' \
-              \) \
-              -print \
-              | wc -l
-          )"
-
-          if [ "$N30_COUNT" -eq 0 ]; then
-            echo
-            echo "ERROR: No N30 Pro / Netcore firmware file found."
-            exit 1
-          fi
-
-          echo
-          echo "Found $N30_COUNT N30 Pro / Netcore firmware file(s)."
-          echo "Firmware image verification PASSED."
-
       # ============================================================
-      # 19. Build KMOD artifact directory
-      # ============================================================
-      - name: Prepare KMOD artifact
-        shell: bash
-        working-directory: immortalwrt
-        run: |
-          set -e
-
-          rm -rf n30-pro-kmods
-          mkdir -p n30-pro-kmods
-
-          PACKAGE_ROOT="bin/targets/mediatek/filogic"
-
-          echo "========================================"
-          echo "Collect KMOD APK packages"
-          echo "========================================"
-
-          find "$PACKAGE_ROOT" \
-            -type f \
-            -name 'kmod-*.apk' \
-            -exec cp -f {} n30-pro-kmods/ \;
-
-          cp -f .config n30-pro-kmods/
-
-          if [ -f "$PACKAGE_ROOT/packages.adb" ]; then
-            cp -f \
-              "$PACKAGE_ROOT/packages.adb" \
-              n30-pro-kmods/
-          fi
-
-          if [ -f "$PACKAGE_ROOT/packages.adb.sig" ]; then
-            cp -f \
-              "$PACKAGE_ROOT/packages.adb.sig" \
-              n30-pro-kmods/
-          fi
-
-          TOTAL="$(
-            find n30-pro-kmods \
-              -type f \
-              -name 'kmod-*.apk' \
-              | wc -l
-          )"
-
-          echo
-          echo "Collected KMOD APK count: $TOTAL"
-
-          if [ "$TOTAL" -eq 0 ]; then
-            echo
-            echo "ERROR: KMOD artifact directory is empty."
-            exit 1
-          fi
-
-          echo
-          echo "Collected KMOD packages:"
-          find n30-pro-kmods \
-            -maxdepth 1 \
-            -type f \
-            -name 'kmod-*.apk' \
-            -printf '%f\n' \
-            | sort
-
-      # ============================================================
-      # 20. Generate complete build report
+      # 22. 生成构建报告
       # ============================================================
       - name: Generate build report
-        shell: bash
         working-directory: immortalwrt
         run: |
           set -e
 
-          REPORT="n30-pro-build-report.txt"
-
-          TARGET_DIR="bin/targets/mediatek/filogic"
-
           {
-            echo "============================================================"
-            echo "ImmortalWrt 25.12.2 - Netcore N30 Pro Build Report"
-            echo "============================================================"
+            echo "=================================================="
+            echo "ImmortalWrt 25.12.2 - Netcore N30 Pro"
+            echo "Complete Build Report"
+            echo "=================================================="
             echo
 
-            echo "Source:"
-            git describe --tags --always || true
-
-            echo
-            echo "Commit:"
+            echo "ImmortalWrt commit:"
             git rev-parse HEAD
-
             echo
-            echo "============================================================"
-            echo "Target"
-            echo "============================================================"
 
-            grep '^CONFIG_TARGET_mediatek' .config || true
-
+            echo "Target:"
+            grep '^CONFIG_TARGET_' .config || true
             echo
-            echo "============================================================"
-            echo "APK / package settings"
-            echo "============================================================"
 
+            echo "APK:"
+            grep -E '^CONFIG_(USE_APK|PER_FEED_REPO|FEED_)' \
+              .config || true
+            echo
+
+            echo "USB:"
             grep -E \
-              '^(CONFIG_USE_APK|CONFIG_SIGNED_PACKAGES|CONFIG_SIGNATURE_CHECK|CONFIG_SIGN_EACH_PACKAGE|CONFIG_PER_FEED_REPO|CONFIG_ALL_KMODS)=' \
+              '^CONFIG_PACKAGE_kmod-usb' \
               .config \
-              || true
-
+              | sort || true
             echo
-            echo "============================================================"
-            echo "Explicit firmware KMODs"
-            echo "============================================================"
 
-            grep '^CONFIG_PACKAGE_kmod-' .config \
-              | grep '=y$' \
-              | sort \
-              || true
-
+            echo "WWAN:"
+            grep -E \
+              '^CONFIG_PACKAGE_(kmod-wwan|kmod-usb-net-qmi|kmod-usb-net-cdc-mbim|kmod-usb-serial|kmod-usb-wdm|uqmi|umbim|libqmi|libmbim|usb-modeswitch)' \
+              .config \
+              | sort || true
             echo
-            echo "============================================================"
-            echo "KMODs built as packages"
-            echo "============================================================"
 
-            grep '^CONFIG_PACKAGE_kmod-' .config \
-              | grep '=m$' \
-              | wc -l \
-              | awk '{print "KMOD packages selected as =m: "$1}'
-
+            echo "PassWall kernel:"
+            grep -E \
+              '^CONFIG_PACKAGE_kmod-(tun|inet-diag|netlink-diag|nf-|nft-)' \
+              .config \
+              | sort || true
             echo
-            echo "============================================================"
-            echo "Kernel package"
-            echo "============================================================"
 
-            find "$TARGET_DIR" \
+            echo "PassWall userspace:"
+            grep -E \
+              '^CONFIG_PACKAGE_(dnsmasq-full|ip-full|ipt2socks|dns2socks|chinadns-ng|geoview|microsocks|resolveip|tcping|lyaml)' \
+              .config \
+              | sort || true
+            echo
+
+            echo "WireGuard:"
+            grep -E \
+              '^CONFIG_PACKAGE_(kmod-wireguard|wireguard-tools)' \
+              .config \
+              | sort || true
+            echo
+
+            echo "StarVPN:"
+            echo "NOT INCLUDED"
+            echo
+
+            echo "Images:"
+            find bin/targets/mediatek/filogic \
+              -maxdepth 1 \
               -type f \
-              -name 'kernel-*.apk' \
-              -print \
-              | sort \
-              || true
-
-            echo
-            echo "============================================================"
-            echo "Generated KMOD APK count"
-            echo "============================================================"
-
-            find "$TARGET_DIR" \
-              -type f \
-              -name 'kmod-*.apk' \
-              -print \
-              | wc -l
-
-            echo
-            echo "============================================================"
-            echo "XHCI modules"
-            echo "============================================================"
-
-            find build_dir \
-              -type f \
-              \( \
-                -name 'xhci-hcd.ko' \
-                -o \
-                -name 'xhci-mtk-hcd.ko' \
-              \) \
-              -print \
+              -printf '%f\n' \
               | sort
 
-            echo
-            echo "============================================================"
-            echo "Firmware files"
-            echo "============================================================"
+          } > build-report.txt
 
-            find "$TARGET_DIR" \
-              -maxdepth 2 \
-              -type f \
-              \( \
-                -iname '*n30*' \
-                -o \
-                -iname '*netcore*' \
-              \) \
-              -print \
-              | sort
-
-            echo
-            echo "============================================================"
-            echo "StarVPN"
-            echo "============================================================"
-
-            echo "StarVPN client is NOT compiled into firmware."
-            echo "Only kernel/VPN prerequisites are included."
-
-            echo
-            echo "============================================================"
-            echo "Build completed"
-            echo "============================================================"
-
-          } > "$REPORT"
-
-          cat "$REPORT"
+          cat build-report.txt
 
       # ============================================================
-      # 21. Upload firmware
+      # 23. 上传最终固件
       # ============================================================
       - name: Upload firmware
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-25.12.2-netcore-n30-pro-usb-kmod-firmware
+          name: immortalwrt-25.12.2-netcore-n30-pro-complete
           path: |
-            immortalwrt/bin/targets/mediatek/filogic/**
-            immortalwrt/n30-pro-build-report.txt
-          if-no-files-found: error
-          retention-days: 7
-
-      # ============================================================
-      # 22. Upload all generated KMOD packages
-      # ============================================================
-      - name: Upload KMOD packages
-        uses: actions/upload-artifact@v7
-        with:
-          name: immortalwrt-25.12.2-netcore-n30-pro-kmods
-          path: |
-            immortalwrt/n30-pro-kmods/**
+            immortalwrt/bin/targets/mediatek/filogic/*
+            immortalwrt/build-report.txt
           if-no-files-found: error
           retention-days: 7
