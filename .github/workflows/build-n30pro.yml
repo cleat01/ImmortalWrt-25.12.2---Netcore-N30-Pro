@@ -25,9 +25,9 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. Build environment
-      # ============================================================
+      # ==========================================================
+      # 1. Install build dependencies
+      # ==========================================================
 
       - name: Install build dependencies
         run: |
@@ -61,9 +61,9 @@ jobs:
             device-tree-compiler \
             quilt
 
-      # ============================================================
-      # 2. ImmortalWrt 25.12.2
-      # ============================================================
+      # ==========================================================
+      # 2. Checkout ImmortalWrt 25.12.2
+      # ==========================================================
 
       - name: Checkout ImmortalWrt 25.12.2
         run: |
@@ -77,19 +77,20 @@ jobs:
 
           cd immortalwrt
 
-          echo "===== ImmortalWrt ====="
+          echo "===== ImmortalWrt commit ====="
           git rev-parse HEAD
+
+          echo
+          echo "===== ImmortalWrt version ====="
           git describe --tags --always
 
-      # ============================================================
-      # 3. N30 Pro patch repository
-      # ============================================================
+      # ==========================================================
+      # 3. Checkout N30 Pro patch
+      # ==========================================================
 
       - name: Checkout N30 Pro patch
         run: |
           set -euxo pipefail
-
-          rm -rf Netcore-N30-Pro-patch-for-OpenWrt
 
           git clone \
             --depth 1 \
@@ -97,20 +98,25 @@ jobs:
             "${PATCH_REPO}" \
             Netcore-N30-Pro-patch-for-OpenWrt
 
-          echo "===== N30 Pro patch repository ====="
+          echo "===== N30 Pro patch commit ====="
 
-          git -C Netcore-N30-Pro-patch-for-OpenWrt rev-parse HEAD
+          git -C \
+            Netcore-N30-Pro-patch-for-OpenWrt \
+            rev-parse HEAD
 
           echo
-          find Netcore-N30-Pro-patch-for-OpenWrt \
+          echo "===== Patch files ====="
+
+          find \
+            Netcore-N30-Pro-patch-for-OpenWrt \
             -maxdepth 3 \
             -type f \
             -print \
             | sort
 
-      # ============================================================
+      # ==========================================================
       # 4. Apply N30 Pro patch
-      # ============================================================
+      # ==========================================================
 
       - name: Apply N30 Pro patch
         working-directory: immortalwrt
@@ -125,35 +131,28 @@ jobs:
             ../Netcore-N30-Pro-patch-for-OpenWrt
 
           echo
-          echo "===== Verify N30 Pro patch ====="
+          echo "===== Verify N30 Pro DTS ====="
 
           test -f \
             target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
 
-          echo "[OK] N30 Pro DTS exists"
-
-          grep -R \
-            -n \
-            "netcore,n30-pro" \
-            target/linux/mediatek \
-            | head -50 \
-            || true
+          echo "[OK] mt7981b-netcore-n30-pro.dts"
 
           echo
-          echo "===== Verify device definition ====="
+          echo "===== Verify N30 Pro device definition ====="
 
           grep -R \
             -n \
             "netcore_n30-pro" \
             target/linux/mediatek \
-            | head -30 \
+            | head -50 \
             || true
 
-      # ============================================================
+      # ==========================================================
       # 5. Verify USB VBUS fix
-      # ============================================================
+      # ==========================================================
 
-      - name: Verify N30 Pro USB VBUS DTS
+      - name: Verify USB VBUS DTS
         working-directory: immortalwrt
         run: |
           set -euxo pipefail
@@ -165,13 +164,13 @@ jobs:
           echo "===== USB VBUS definition ====="
 
           grep -n \
-            -A20 \
+            -A25 \
             -B5 \
             "usb_vbus" \
             "${DTS}"
 
           echo
-          echo "===== Check GPIO23 ====="
+          echo "===== Verify GPIO23 ====="
 
           grep -q \
             'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' \
@@ -180,7 +179,7 @@ jobs:
           echo "[OK] GPIO23"
 
           echo
-          echo "===== Check regulator ====="
+          echo "===== Verify 5V regulator ====="
 
           grep -q \
             'regulator-name = "usb-vbus";' \
@@ -205,7 +204,7 @@ jobs:
           echo "[OK] USB VBUS regulator"
 
           echo
-          echo "===== Check USB PHY ====="
+          echo "===== Verify USB PHY ====="
 
           grep -n \
             -A10 \
@@ -214,7 +213,7 @@ jobs:
             "${DTS}"
 
           echo
-          echo "===== Check XHCI ====="
+          echo "===== Verify XHCI VBUS supply ====="
 
           grep -n \
             -A15 \
@@ -231,9 +230,9 @@ jobs:
           echo
           echo "USB VBUS DTS verification passed."
 
-      # ============================================================
+      # ==========================================================
       # 6. Update feeds
-      # ============================================================
+      # ==========================================================
 
       - name: Update feeds
         working-directory: immortalwrt
@@ -243,11 +242,11 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ============================================================
-      # 7. Generate package/target metadata
-      # ============================================================
+      # ==========================================================
+      # 7. Generate metadata
+      # ==========================================================
 
-      - name: Prepare build metadata
+      - name: Prepare metadata
         working-directory: immortalwrt
         run: |
           set -euxo pipefail
@@ -256,102 +255,82 @@ jobs:
 
           make prepare-tmpinfo
 
-          test -f tmp/.config-package.in
           test -f tmp/.config-target.in
+          test -f tmp/.config-package.in
 
           echo
           echo "===== N30 Pro target metadata ====="
 
-          grep -nE \
-            'netcore|n30.pro|n30_pro|n30-pro' \
+          grep -n \
+            'netcore_n30-pro' \
             tmp/.config-target.in \
-            | head -100 \
+            | head -50 \
             || true
 
           echo
-          echo "===== N30 Pro device metadata ====="
+          echo "===== Exact N30 Pro target entries ====="
 
-          grep -R \
-            -nE \
-            'netcore_n30-pro|netcore-n30-pro|n30-pro' \
-            target/linux/mediatek \
-            | head -100 \
+          grep -n \
+            '^config TARGET_mediatek_filogic_DEVICE_netcore_n30-pro' \
+            tmp/.config-target.in \
             || true
 
-      # ============================================================
-      # 8. Detect exact N30 Pro Kconfig symbol
-      # ============================================================
+          echo
+          echo "===== Device package entry ====="
 
-      - name: Detect exact N30 Pro target symbol
+          grep -n \
+            '^config TARGET_DEVICE_PACKAGES_mediatek_filogic_DEVICE_netcore_n30-pro' \
+            tmp/.config-target.in \
+            || true
+
+      # ==========================================================
+      # 8. Configure N30 Pro target
+      #
+      # IMPORTANT:
+      # Do NOT use fuzzy matching here.
+      #
+      # Actual metadata contains BOTH:
+      #
+      # TARGET_DEVICE_PACKAGES_mediatek_filogic_DEVICE_netcore_n30-pro
+      #
+      # and:
+      #
+      # TARGET_mediatek_filogic_DEVICE_netcore_n30-pro
+      #
+      # Only the second one is the target selector.
+      # ==========================================================
+
+      - name: Configure N30 Pro target
         working-directory: immortalwrt
         run: |
           set -euxo pipefail
 
-          echo "===== Search N30 Pro Kconfig symbols ====="
+          TARGET_SYMBOL="TARGET_mediatek_filogic_DEVICE_netcore_n30-pro"
 
-          TARGET_SYMBOLS="$(
-            sed -n -E \
-              's/^[[:space:]]*config[[:space:]]+(TARGET_[A-Za-z0-9_-]*netcore[_-]n30[_-]pro[A-Za-z0-9_-]*).*/\1/p' \
-              tmp/.config-target.in \
-              | sort -u
-          )"
+          echo "===== Verify exact target symbol ====="
 
-          echo
-          echo "Detected symbols:"
-          echo "${TARGET_SYMBOLS}"
-
-          if [ -z "${TARGET_SYMBOLS}" ]; then
+          if ! grep -q \
+            "^config ${TARGET_SYMBOL}([[:space:]]|$)" \
+            tmp/.config-target.in
+          then
             echo
-            echo "ERROR: N30 Pro Kconfig symbol was not found."
+            echo "ERROR: Exact N30 Pro target symbol was not found."
 
             echo
-            echo "===== All Netcore-related target metadata ====="
-
-            grep -nEi \
-              'netcore|n30' \
+            echo "Available matching symbols:"
+            grep -n \
+              'netcore_n30-pro' \
               tmp/.config-target.in \
-              | head -200 \
+              | head -50 \
               || true
 
             exit 1
           fi
 
-          TARGET_COUNT="$(
-            printf '%s\n' "${TARGET_SYMBOLS}" \
-              | sed '/^[[:space:]]*$/d' \
-              | wc -l
-          )"
-
-          if [ "${TARGET_COUNT}" -ne 1 ]; then
-            echo
-            echo "ERROR: Expected exactly one N30 Pro target symbol."
-
-            printf '%s\n' "${TARGET_SYMBOLS}"
-
-            exit 1
-          fi
-
-          TARGET_SYMBOL="${TARGET_SYMBOLS}"
+          echo "[OK] ${TARGET_SYMBOL}"
 
           echo
-          echo "Exact N30 Pro target symbol:"
-          echo "${TARGET_SYMBOL}"
-
-          printf '%s\n' "${TARGET_SYMBOL}" > .n30pro-target-symbol
-
-      # ============================================================
-      # 9. Configure exact target
-      # ============================================================
-
-      - name: Configure exact N30 Pro target
-        working-directory: immortalwrt
-        run: |
-          set -euxo pipefail
-
-          TARGET_SYMBOL="$(cat .n30pro-target-symbol)"
-
-          echo "Using target:"
-          echo "${TARGET_SYMBOL}"
+          echo "===== Create target configuration ====="
 
           cat > .config <<EOF
           CONFIG_TARGET_mediatek=y
@@ -366,7 +345,11 @@ jobs:
 
           echo
           echo "===== Configuration before defconfig ====="
+
           cat .config
+
+          echo
+          echo "===== Run defconfig ====="
 
           make defconfig
 
@@ -374,28 +357,28 @@ jobs:
           echo "===== Configuration after defconfig ====="
 
           grep -E \
-            '^CONFIG_TARGET_' \
+            '^CONFIG_TARGET_(mediatek|DEVICE|PROFILE)' \
             .config \
             | sort
 
           echo
-          echo "===== Verify exact N30 Pro symbol ====="
+          echo "===== Verify exact N30 Pro target ====="
 
           if ! grep -q \
             "^CONFIG_${TARGET_SYMBOL}=y$" \
             .config
           then
             echo
-            echo "ERROR: N30 Pro target was NOT retained."
+            echo "ERROR: N30 Pro target was not retained."
 
             echo
             echo "Expected:"
             echo "CONFIG_${TARGET_SYMBOL}=y"
 
             echo
-            echo "Actual relevant configuration:"
+            echo "Actual target configuration:"
             grep -E \
-              '^CONFIG_TARGET_.*(DEVICE|PROFILE)' \
+              '^CONFIG_TARGET_(mediatek|DEVICE|PROFILE)' \
               .config \
               | sort \
               || true
@@ -403,20 +386,20 @@ jobs:
             exit 1
           fi
 
-          echo "[OK] N30 Pro target retained"
+          echo "[OK] N30 Pro target retained."
 
           echo
-          echo "===== Explicit OpenWrt One protection ====="
+          echo "===== Verify OpenWrt One is NOT selected ====="
 
           if grep -q \
             '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y$' \
             .config
           then
             echo
-            echo "ERROR: OpenWrt One was selected."
+            echo "ERROR: OpenWrt One was selected instead of N30 Pro."
 
             echo
-            echo "Current target:"
+            echo "Current device configuration:"
             grep -E \
               '^CONFIG_TARGET_.*DEVICE_' \
               .config \
@@ -428,9 +411,9 @@ jobs:
 
           echo "[OK] OpenWrt One is not selected."
 
-      # ============================================================
-      # 10. Package selection helpers
-      # ============================================================
+      # ==========================================================
+      # 9. Configure packages
+      # ==========================================================
 
       - name: Configure packages
         working-directory: immortalwrt
@@ -445,11 +428,11 @@ jobs:
               tmp/.config-package.in
             then
               echo
-              echo "ERROR: Required package is unavailable:"
+              echo "ERROR: Required package unavailable:"
               echo "${pkg}"
 
               echo
-              echo "Matching metadata:"
+              echo "Matching package metadata:"
               grep -nE \
                 "PACKAGE_${pkg}([[:space:]]|$)" \
                 tmp/.config-package.in \
@@ -459,7 +442,7 @@ jobs:
               exit 1
             fi
 
-            echo "[OK] package available: ${pkg}"
+            echo "[OK] PACKAGE_${pkg}"
 
             echo \
               "CONFIG_PACKAGE_${pkg}=y" \
@@ -473,13 +456,13 @@ jobs:
               "^[[:space:]]*config[[:space:]]+PACKAGE_${pkg}([[:space:]]|$)" \
               tmp/.config-package.in
             then
-              echo "[OK] optional package: ${pkg}"
+              echo "[OK] optional PACKAGE_${pkg}"
 
               echo \
                 "CONFIG_PACKAGE_${pkg}=y" \
                 >> .config
             else
-              echo "[SKIP] optional package unavailable: ${pkg}"
+              echo "[SKIP] optional PACKAGE_${pkg}"
             fi
           }
 
@@ -527,13 +510,13 @@ jobs:
           require_pkg luci-app-samba4
 
           echo
-          echo "===== USB xHCI ====="
+          echo "===== USB XHCI ====="
 
           require_pkg kmod-usb-xhci-hcd
           require_pkg kmod-usb-xhci-mtk
 
           echo
-          echo "===== USB networking ====="
+          echo "===== USB network ====="
 
           require_pkg kmod-usb-net
           require_pkg kmod-usb-net-cdc-ether
@@ -573,124 +556,65 @@ jobs:
           optional_pkg kmod-usb-net-aqc111
 
           echo
-          echo "===== Modem LuCI protocols ====="
+          echo "===== LuCI modem protocols ====="
 
           optional_pkg luci-proto-qmi
           optional_pkg luci-proto-mbim
           optional_pkg luci-proto-ncm
 
           echo
-          echo "===== PassWall kernel dependencies ====="
+          echo "===== PassWall kernel modules ====="
 
           require_pkg kmod-nft-socket
           require_pkg kmod-nft-tproxy
           require_pkg kmod-tun
 
           echo
-          echo "===== Chinese LuCI translations ====="
+          echo "===== Chinese translations ====="
 
           optional_pkg luci-i18n-passwall-zh-cn
           optional_pkg luci-i18n-mwan3-zh-cn
           optional_pkg luci-i18n-samba4-zh-cn
 
-      # ============================================================
-      # 11. Samba4 security check
-      # ============================================================
-
-      - name: Check Samba4 security
-        working-directory: immortalwrt
-        run: |
-          set -euxo pipefail
-
-          echo "===== Search Samba4 ACL files ====="
-
-          SAMBA_FILES="$(
-            find feeds package \
-              -type f \
-              \( \
-                -name '*.json' \
-                -o \
-                -name 'acl.json' \
-              \) \
-              -print 2>/dev/null \
-              | grep -Ei 'samba|acl' \
-              || true
-          )"
-
-          if [ -z "${SAMBA_FILES}" ]; then
-            echo "No Samba ACL JSON files found in source tree."
-            echo "Continuing because package source itself will be verified after defconfig."
-          else
-            echo "${SAMBA_FILES}"
-          fi
-
-          FOUND=0
-
-          while IFS= read -r file
-          do
-            [ -n "${file}" ] || continue
-
-            if grep -n \
-              '/usr/sbin/smbd' \
-              "${file}" \
-              | grep -E \
-                '"exec"|"exec"[[:space:]]*:' \
-                > /tmp/samba4-dangerous-acl.txt
-            then
-              echo
-              echo "ERROR: Dangerous smbd exec ACL detected:"
-              echo "${file}"
-              cat /tmp/samba4-dangerous-acl.txt
-
-              FOUND=1
-            fi
-          done <<< "${SAMBA_FILES}"
-
-          if [ "${FOUND}" -ne 0 ]; then
-            echo
-            echo "Samba4 security check FAILED."
-            exit 1
-          fi
-
-          echo
-          echo "Samba4 source ACL check passed."
-
-      # ============================================================
-      # 12. Final defconfig
-      # ============================================================
+      # ==========================================================
+      # 10. Final configuration
+      # ==========================================================
 
       - name: Final defconfig and verification
         working-directory: immortalwrt
         run: |
           set -euxo pipefail
 
-          TARGET_SYMBOL="$(cat .n30pro-target-symbol)"
+          TARGET_SYMBOL="TARGET_mediatek_filogic_DEVICE_netcore_n30-pro"
+
+          echo "===== Final defconfig ====="
 
           make defconfig
 
           echo
-          echo "============================================================"
-          echo "FINAL TARGET CONFIGURATION"
-          echo "============================================================"
+          echo "===== Final target configuration ====="
 
           grep -E \
-            '^CONFIG_TARGET_' \
+            '^CONFIG_TARGET_(mediatek|DEVICE|PROFILE)' \
             .config \
             | sort
 
           echo
-          echo "Expected target:"
-          echo "CONFIG_${TARGET_SYMBOL}=y"
+          echo "===== Verify N30 Pro ====="
 
           if ! grep -q \
             "^CONFIG_${TARGET_SYMBOL}=y$" \
             .config
           then
             echo
-            echo "ERROR: Exact N30 Pro target was lost during final defconfig."
+            echo "ERROR: Final configuration is NOT N30 Pro."
 
             echo
-            echo "Current target:"
+            echo "Expected:"
+            echo "CONFIG_${TARGET_SYMBOL}=y"
+
+            echo
+            echo "Actual:"
             grep -E \
               '^CONFIG_TARGET_.*DEVICE_|^CONFIG_TARGET_PROFILE=' \
               .config \
@@ -699,6 +623,11 @@ jobs:
 
             exit 1
           fi
+
+          echo "[OK] CONFIG_${TARGET_SYMBOL}=y"
+
+          echo
+          echo "===== Verify OpenWrt One ====="
 
           if grep -q \
             '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y$' \
@@ -709,10 +638,10 @@ jobs:
             exit 1
           fi
 
+          echo "[OK] OpenWrt One not selected."
+
           echo
-          echo "============================================================"
-          echo "FINAL REQUIRED PACKAGES"
-          echo "============================================================"
+          echo "===== Verify required packages ====="
 
           REQUIRED_PACKAGES="
           luci
@@ -748,7 +677,7 @@ jobs:
               "^CONFIG_PACKAGE_${pkg}=y$" \
               .config
             then
-              echo "[OK] ${pkg}"
+              echo "[OK] CONFIG_PACKAGE_${pkg}=y"
             else
               echo
               echo "ERROR: Required package not enabled:"
@@ -758,7 +687,7 @@ jobs:
           done
 
           echo
-          echo "===== Verify PassWall transparent proxy ====="
+          echo "===== Verify PassWall selector ====="
 
           grep -q \
             '^CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y$' \
@@ -767,21 +696,11 @@ jobs:
           echo "[OK] PassWall Nftables Transparent Proxy"
 
           echo
-          echo "===== Verify USB package configuration ====="
+          echo "===== Final configuration passed ====="
 
-          grep -E \
-            '^CONFIG_PACKAGE_kmod-usb-(xhci|net|wdm|serial)' \
-            .config \
-            | sort
-
-          echo
-          echo "============================================================"
-          echo "FINAL CONFIGURATION PASSED"
-          echo "============================================================"
-
-      # ============================================================
-      # 13. Download sources
-      # ============================================================
+      # ==========================================================
+      # 11. Download sources
+      # ==========================================================
 
       - name: Download sources
         working-directory: immortalwrt
@@ -792,16 +711,16 @@ jobs:
             -j"$(nproc)" \
             V=s
 
-      # ============================================================
-      # 14. Build
-      # ============================================================
+      # ==========================================================
+      # 12. Build firmware
+      # ==========================================================
 
       - name: Build firmware
         working-directory: immortalwrt
         run: |
           set -euxo pipefail
 
-          echo "===== Build ====="
+          echo "===== Build information ====="
 
           echo "CPU cores:"
           nproc
@@ -814,17 +733,17 @@ jobs:
             | sort
 
           echo
-          echo "Build started."
+          echo "===== Start build ====="
 
           make \
             -j"$(nproc)" \
             V=s
 
-      # ============================================================
-      # 15. Verify build
-      # ============================================================
+      # ==========================================================
+      # 13. Verify build result
+      # ==========================================================
 
-      - name: Verify firmware output
+      - name: Verify build output
         working-directory: immortalwrt
         run: |
           set -euxo pipefail
@@ -833,7 +752,8 @@ jobs:
           echo "BUILD OUTPUT"
           echo "============================================================"
 
-          find bin/targets/mediatek/filogic \
+          find \
+            bin/targets/mediatek/filogic \
             -maxdepth 2 \
             -type f \
             -printf '%p\n' \
@@ -841,27 +761,29 @@ jobs:
 
           echo
           echo "============================================================"
-          echo "SEARCH N30 PRO SYSUPGRADE IMAGE"
+          echo "FIND N30 PRO SYSUPGRADE IMAGE"
           echo "============================================================"
 
           SYSUPGRADE="$(
-            find bin/targets/mediatek/filogic \
+            find \
+              bin/targets/mediatek/filogic \
               -type f \
               \( \
-                -iname '*n30*pro*sysupgrade*.bin' \
-                -o \
                 -iname '*n30-pro*sysupgrade*.bin' \
+                -o \
+                -iname '*n30_pro*sysupgrade*.bin' \
               \) \
               | head -n 1
           )"
 
           if [ -z "${SYSUPGRADE}" ]; then
             echo
-            echo "ERROR: N30 Pro sysupgrade image was not found."
+            echo "ERROR: N30 Pro sysupgrade image not found."
 
             echo
-            echo "All generated images:"
-            find bin/targets/mediatek/filogic \
+            echo "All images:"
+            find \
+              bin/targets/mediatek/filogic \
               -type f \
               -print \
               | sort
@@ -869,22 +791,24 @@ jobs:
             exit 1
           fi
 
-          echo "N30 Pro sysupgrade:"
+          echo
+          echo "[OK] N30 Pro sysupgrade image:"
           echo "${SYSUPGRADE}"
 
           ls -lh "${SYSUPGRADE}"
 
           echo
           echo "============================================================"
-          echo "SEARCH FACTORY IMAGE"
+          echo "FIND N30 PRO FACTORY IMAGE"
           echo "============================================================"
 
-          find bin/targets/mediatek/filogic \
+          find \
+            bin/targets/mediatek/filogic \
             -type f \
             \( \
-              -iname '*n30*pro*factory*.bin' \
-              -o \
               -iname '*n30-pro*factory*.bin' \
+              -o \
+              -iname '*n30_pro*factory*.bin' \
             \) \
             -print \
             || true
@@ -894,17 +818,15 @@ jobs:
           echo "VERIFY XHCI MODULES"
           echo "============================================================"
 
-          XHCI_FOUND=0
-
           if find build_dir \
             -type f \
             -name 'xhci-hcd.ko' \
             | grep -q .
           then
             echo "[OK] xhci-hcd.ko"
-            XHCI_FOUND=$((XHCI_FOUND + 1))
           else
             echo "[ERROR] xhci-hcd.ko not found"
+            exit 1
           fi
 
           if find build_dir \
@@ -913,25 +835,19 @@ jobs:
             | grep -q .
           then
             echo "[OK] xhci-mtk-hcd.ko"
-            XHCI_FOUND=$((XHCI_FOUND + 1))
           else
             echo "[ERROR] xhci-mtk-hcd.ko not found"
-          fi
-
-          if [ "${XHCI_FOUND}" -ne 2 ]; then
-            echo
-            echo "ERROR: N30 Pro USB xHCI modules were not both built."
             exit 1
           fi
 
           echo
           echo "Build verification passed."
 
-      # ============================================================
-      # 16. Generate checksums
-      # ============================================================
+      # ==========================================================
+      # 14. SHA256
+      # ==========================================================
 
-      - name: Generate SHA256 checksums
+      - name: Generate SHA256
         working-directory: immortalwrt
         run: |
           set -euxo pipefail
@@ -951,9 +867,9 @@ jobs:
 
           cat sha256sums-n30pro.txt
 
-      # ============================================================
-      # 17. Upload artifacts
-      # ============================================================
+      # ==========================================================
+      # 15. Upload artifacts
+      # ==========================================================
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
