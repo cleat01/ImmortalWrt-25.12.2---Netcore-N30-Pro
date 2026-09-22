@@ -1,11 +1,13 @@
 name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Final
 
+
 on:
   workflow_dispatch:
 
 
 permissions:
   contents: read
+
 
 
 jobs:
@@ -19,10 +21,10 @@ jobs:
 
 
       # ============================================================
-      # 1. Install build environment
+      # Install build environment
       # ============================================================
 
-      - name: Install build dependencies
+      - name: Install build environment
 
         shell: bash
 
@@ -30,16 +32,18 @@ jobs:
 
           set -e
 
+
           sudo bash -c \
           'bash <(curl -fsSL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
 
 
       # ============================================================
-      # 2. Clone ImmortalWrt 25.12.2
+      # Clone ImmortalWrt 25.12.2
       # ============================================================
 
-      - name: Clone ImmortalWrt 25.12.2
+
+      - name: Clone ImmortalWrt
 
 
         shell: bash
@@ -63,14 +67,13 @@ jobs:
           cd immortalwrt
 
 
-
-          echo "ImmortalWrt version:"
+          echo "ImmortalWrt version"
 
 
           git describe --tags --always || true
 
 
-          echo "Commit:"
+          echo "Commit"
 
 
           git rev-parse HEAD
@@ -80,8 +83,9 @@ jobs:
 
 
       # ============================================================
-      # 3. Clone N30 Pro adaptation
+      # Clone N30 Pro patch
       # ============================================================
+
 
       - name: Clone Netcore N30 Pro patch
 
@@ -103,15 +107,12 @@ jobs:
 
 
 
-          echo "N30 patch ready"
-
-
-
 
 
       # ============================================================
-      # 4. Apply N30 Pro adaptation
+      # Apply N30 Pro patch
       # ============================================================
+
 
       - name: Apply N30 Pro patch
 
@@ -136,10 +137,11 @@ jobs:
 
 
       # ============================================================
-      # 5. Verify DTS USB VBUS
+      # Verify DTS USB VBUS
       # ============================================================
 
-      - name: Verify USB VBUS DTS
+
+      - name: Verify N30 Pro USB DTS
 
 
         shell: bash
@@ -154,7 +156,6 @@ jobs:
           set -e
 
 
-
           DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
 
 
@@ -163,7 +164,7 @@ jobs:
 
 
 
-          echo "Checking USB VBUS"
+          echo "Checking VBUS regulator"
 
 
 
@@ -197,15 +198,16 @@ jobs:
 
 
 
-          echo "USB VBUS verification passed"
+          echo "VBUS OK"
 
 
 
 
 
       # ============================================================
-      # 6. Verify USB PHY
+      # Verify USB PHY
       # ============================================================
+
 
       - name: Verify USB PHY
 
@@ -222,12 +224,7 @@ jobs:
           set -e
 
 
-
           DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
-
-
-
-          echo "Checking USB PHY"
 
 
 
@@ -245,15 +242,16 @@ jobs:
 
 
 
-          echo "USB PHY verification passed"
+          echo "USB PHY OK"
 
 
 
 
 
       # ============================================================
-      # 7. Verify xHCI controller
+      # Verify xHCI
       # ============================================================
+
 
       - name: Verify xHCI DTS
 
@@ -272,10 +270,6 @@ jobs:
 
 
           DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
-
-
-
-          echo "Checking xHCI"
 
 
 
@@ -300,17 +294,18 @@ jobs:
 
 
 
-          echo "xHCI verification passed"
+          echo "xHCI OK"
 
 
 
 
 
       # ============================================================
-      # 8. Update feeds
+      # Update feeds
       # ============================================================
 
-      - name: Update ImmortalWrt feeds
+
+      - name: Update feeds
 
 
         shell: bash
@@ -331,10 +326,11 @@ jobs:
           ./scripts/feeds install -a
 
       # ============================================================
-      # 9. Configure firmware packages
+      # Configure firmware
       # ============================================================
 
-      - name: Configure N30 Pro packages
+
+      - name: Configure N30 Pro firmware
 
 
         shell: bash
@@ -349,234 +345,151 @@ jobs:
           set -e
 
 
+          cat > .config <<'EOF'
 
-          echo "Configure target"
 
+CONFIG_TARGET_mediatek=y
 
+CONFIG_TARGET_mediatek_filogic=y
 
-          ./scripts/config set \
-          CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y
 
 
 
-          ./scripts/config set \
-          CONFIG_TARGET_mediatek_filogic=y
+# ============================================================
+# LuCI
+# ============================================================
 
 
+CONFIG_PACKAGE_luci=y
 
-          ./scripts/config set \
-          CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y
+CONFIG_PACKAGE_luci-ssl=y
 
 
 
 
 
-          # ========================================================
-          # LuCI
-          # ========================================================
+# ============================================================
+# USB 3.0 XHCI
+# ============================================================
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_kmod-usb3=y
 
+CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
 
+CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_luci-ssl=y
 
 
+CONFIG_PACKAGE_kmod-usb-core=y
 
 
 
-          # ========================================================
-          # USB 3.0 + XHCI
-          # ========================================================
+# USB Storage
 
+CONFIG_PACKAGE_kmod-usb-storage=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb3=y
+CONFIG_PACKAGE_kmod-usb-storage-uas=y
 
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
+# Filesystem
 
+CONFIG_PACKAGE_block-mount=y
 
+CONFIG_PACKAGE_blockd=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
 
+CONFIG_PACKAGE_kmod-fs-ext4=y
 
+CONFIG_PACKAGE_kmod-fs-vfat=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-core=y
+CONFIG_PACKAGE_kmod-fs-exfat=y
 
 
 
 
 
-          # ========================================================
-          # USB Storage
-          # ========================================================
+# ============================================================
+# USB 4G / 5G modem
+# ============================================================
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-usb-net=y
 
+CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
 
+CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-storage-uas=y
+CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
 
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_kmod-usb-serial=y
 
+CONFIG_PACKAGE_kmod-usb-serial-option=y
 
+CONFIG_PACKAGE_kmod-usb-wdm=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_blockd=y
 
 
+CONFIG_PACKAGE_usb-modeswitch=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_uqmi=y
 
+CONFIG_PACKAGE_umbim=y
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-fs-vfat=y
 
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-fs-exfat=y
+# ============================================================
+# MWAN3 Load Balance
+# ============================================================
 
 
+CONFIG_PACKAGE_mwan3=y
 
+CONFIG_PACKAGE_luci-app-mwan3=y
 
 
-          # ========================================================
-          # USB 4G / 5G modem
-          # ========================================================
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-net=y
 
+# ============================================================
+# Samba4
+# ============================================================
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+CONFIG_PACKAGE_samba4-server=y
 
+CONFIG_PACKAGE_luci-app-samba4=y
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
 
 
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+# ============================================================
+# Network tools
+# ============================================================
 
 
+CONFIG_PACKAGE_curl=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-serial=y
+CONFIG_PACKAGE_wget-ssl=y
 
+CONFIG_PACKAGE_tcpdump=y
 
+CONFIG_PACKAGE_htop=y
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-serial-option=y
 
 
+EOF
 
-          ./scripts/config set \
-          CONFIG_PACKAGE_kmod-usb-wdm=y
 
 
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_usb-modeswitch=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_uqmi=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_umbim=y
-
-
-
-
-
-          # ========================================================
-          # MWAN3 Load Balance
-          # ========================================================
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_mwan3=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_luci-app-mwan3=y
-
-
-
-
-
-          # ========================================================
-          # Samba4
-          # ========================================================
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_samba4-server=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_samba4-utils=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_luci-app-samba4=y
-
-
-
-
-
-          # ========================================================
-          # Network tools
-          # ========================================================
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_curl=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_wget-ssl=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_tcpdump=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_htop=y
-
-
+          echo "Running make defconfig"
 
 
 
@@ -584,15 +497,16 @@ jobs:
 
 
 
-          echo "Package configuration completed"
+          echo "Firmware configuration completed"
 
 
 
 
 
       # ============================================================
-      # 10. Verify configuration
+      # Verify selected packages
       # ============================================================
+
 
       - name: Verify package configuration
 
@@ -609,8 +523,7 @@ jobs:
           set -e
 
 
-
-          echo "Verify configuration"
+          echo "Checking configuration"
 
 
 
@@ -644,27 +557,27 @@ jobs:
 
 
 
-          echo "Configuration verification passed"
+          echo "Configuration check passed"
 
 
 
 
 
       # ============================================================
-      # 11. Add custom IPK packages
+      # Add custom IPK packages
       #
-      # 星空组网等第三方IPK
+      # Example:
       #
-      # 放入 files:
+      # 星空组网.ipk
       #
-      # /usr/share/custom-packages/
+      # 放入:
       #
-      # 不参与feeds
+      # custom_packages/*.ipk
       #
       # ============================================================
 
 
-      - name: Add custom IPK packages
+      - name: Inject custom IPK packages
 
 
         shell: bash
@@ -681,18 +594,18 @@ jobs:
 
 
           mkdir -p \
-          files/usr/share/custom-packages
+          files/usr/share/custom-ipk
 
 
 
           if [ -d ../custom_packages ]; then
 
 
-            cp \
-            ../custom_packages/*.ipk \
-            files/usr/share/custom-packages/ \
-            2>/dev/null \
-            || true
+              cp \
+              ../custom_packages/*.ipk \
+              files/usr/share/custom-ipk/ \
+              2>/dev/null \
+              || true
 
 
           fi
@@ -706,11 +619,11 @@ jobs:
 
 
       # ============================================================
-      # 12. Download sources
+      # Prepare download
       # ============================================================
 
 
-      - name: Download build sources
+      - name: Download sources
 
 
         shell: bash
@@ -725,13 +638,15 @@ jobs:
           set -e
 
 
+
           make download \
           -j$(nproc) \
           V=s
 
       # ============================================================
-      # 13. Build firmware
+      # Build firmware
       # ============================================================
+
 
       - name: Build firmware
 
@@ -748,12 +663,11 @@ jobs:
           set -e
 
 
+          echo "====================================="
 
-          echo "================================"
+          echo "Start ImmortalWrt build"
 
-          echo "Start compiling ImmortalWrt"
-
-          echo "================================"
+          echo "====================================="
 
 
 
@@ -764,10 +678,11 @@ jobs:
 
 
       # ============================================================
-      # 14. Verify XHCI kernel modules
+      # Verify XHCI kernel modules
       # ============================================================
 
-      - name: Verify XHCI modules
+
+      - name: Verify XHCI kernel modules
 
 
         shell: bash
@@ -783,24 +698,39 @@ jobs:
 
 
 
-          echo "Checking xhci-hcd"
+          echo "Searching xhci-hcd"
 
 
 
-          XHCI_HCD=$(find \
+          find \
+          build_dir \
+          -name "xhci-hcd.ko" \
+          -print
+
+
+
+          XHCI=$(find \
           build_dir \
           -name "xhci-hcd.ko" \
           | wc -l)
 
 
 
-          echo "xhci-hcd count: $XHCI_HCD"
+          echo "xhci-hcd count:"
+          echo "$XHCI"
 
 
 
 
 
-          echo "Checking xhci-mtk"
+          echo "Searching xhci-mtk-hcd"
+
+
+
+          find \
+          build_dir \
+          -name "xhci-mtk-hcd.ko" \
+          -print
 
 
 
@@ -811,19 +741,20 @@ jobs:
 
 
 
-          echo "xhci-mtk count: $XHCI_MTK"
+          echo "xhci-mtk count:"
+          echo "$XHCI_MTK"
 
 
 
 
 
-          if [ "$XHCI_HCD" -eq 0 ]; then
+          if [ "$XHCI" -eq 0 ]; then
 
 
-            echo "ERROR: xhci-hcd.ko missing"
+              echo "ERROR: xhci-hcd.ko missing"
 
 
-            exit 1
+              exit 1
 
 
           fi
@@ -835,10 +766,10 @@ jobs:
           if [ "$XHCI_MTK" -eq 0 ]; then
 
 
-            echo "ERROR: xhci-mtk-hcd.ko missing"
+              echo "ERROR: xhci-mtk-hcd.ko missing"
 
 
-            exit 1
+              exit 1
 
 
           fi
@@ -847,15 +778,16 @@ jobs:
 
 
 
-          echo "XHCI kernel module verification passed"
+          echo "XHCI kernel verification passed"
 
 
 
 
 
       # ============================================================
-      # 15. Verify root filesystem modules
+      # Verify root filesystem USB modules
       # ============================================================
+
 
       - name: Verify rootfs USB modules
 
@@ -873,7 +805,7 @@ jobs:
 
 
 
-          echo "Checking generated rootfs"
+          echo "Checking rootfs modules"
 
 
 
@@ -893,14 +825,11 @@ jobs:
 
 
 
-
-
-          echo "rootfs xhci-hcd:"
+          echo "root xhci:"
           echo "$ROOT_XHCI"
 
 
-
-          echo "rootfs xhci-mtk:"
+          echo "root mtk xhci:"
           echo "$ROOT_MTK"
 
 
@@ -910,10 +839,10 @@ jobs:
           if [ "$ROOT_XHCI" -eq 0 ]; then
 
 
-            echo "ERROR: rootfs missing xhci-hcd"
+              echo "ERROR: rootfs xhci-hcd missing"
 
 
-            exit 1
+              exit 1
 
 
           fi
@@ -925,10 +854,10 @@ jobs:
           if [ "$ROOT_MTK" -eq 0 ]; then
 
 
-            echo "ERROR: rootfs missing xhci-mtk"
+              echo "ERROR: rootfs xhci-mtk missing"
 
 
-            exit 1
+              exit 1
 
 
           fi
@@ -944,43 +873,11 @@ jobs:
 
 
       # ============================================================
-      # 16. Generate package index
-      #
-      # ImmortalWrt 25.12 apk package support
-      #
+      # Verify firmware output
       # ============================================================
 
-      - name: Generate package index
 
-
-        shell: bash
-
-
-        working-directory: immortalwrt
-
-
-        run: |
-
-
-          set -e
-
-
-
-          make package/index
-
-
-
-          echo "Package index generated"
-
-
-
-
-
-      # ============================================================
-      # 17. Verify firmware output
-      # ============================================================
-
-      - name: Verify firmware images
+      - name: Verify firmware output
 
 
         shell: bash
@@ -1004,11 +901,12 @@ jobs:
 
 
 
-          echo "Firmware files:"
+          echo "Generated firmware:"
 
 
 
-          find "$TARGET" \
+          find \
+          "$TARGET" \
           -maxdepth 2 \
           -type f \
           | sort
@@ -1018,8 +916,9 @@ jobs:
 
 
       # ============================================================
-      # 18. Generate build report
+      # Generate build report
       # ============================================================
+
 
       - name: Generate build report
 
@@ -1037,66 +936,74 @@ jobs:
 
 
 
+          REPORT="n30pro-build-report.txt"
+
+
+
           echo "ImmortalWrt 25.12.2" \
-          > n30pro-build-report.txt
+          > "$REPORT"
 
 
 
           echo "Device: Netcore N30 Pro" \
-          >> n30pro-build-report.txt
+          >> "$REPORT"
 
 
 
-          echo "USB Fix: GPIO23 VBUS" \
-          >> n30pro-build-report.txt
+          echo "USB Fix: VBUS GPIO23" \
+          >> "$REPORT"
 
 
 
-          echo "Controller: MediaTek XHCI" \
-          >> n30pro-build-report.txt
+          echo "XHCI: MediaTek" \
+          >> "$REPORT"
+
+
+
+          echo "" \
+          >> "$REPORT"
 
 
 
           echo "Packages:" \
-          >> n30pro-build-report.txt
+          >> "$REPORT"
 
 
 
           grep \
-          '^CONFIG_PACKAGE_kmod-usb' \
+          "^CONFIG_PACKAGE_kmod-usb" \
           .config \
-          >> n30pro-build-report.txt \
+          >> "$REPORT" \
           || true
 
 
 
           grep \
-          '^CONFIG_PACKAGE_mwan3' \
+          "^CONFIG_PACKAGE_mwan3" \
           .config \
-          >> n30pro-build-report.txt \
+          >> "$REPORT" \
           || true
 
 
 
           grep \
-          '^CONFIG_PACKAGE_samba4' \
+          "^CONFIG_PACKAGE_samba" \
           .config \
-          >> n30pro-build-report.txt \
+          >> "$REPORT" \
           || true
 
 
 
-
-
-          cat n30pro-build-report.txt
+          cat "$REPORT"
 
 
 
 
 
       # ============================================================
-      # 19. Upload firmware
+      # Upload firmware
       # ============================================================
+
 
       - name: Upload firmware
 
