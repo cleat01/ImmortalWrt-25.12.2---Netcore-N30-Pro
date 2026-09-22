@@ -3,6 +3,7 @@ name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Final
 "on":
   workflow_dispatch:
 
+
 permissions:
   contents: read
 
@@ -38,7 +39,7 @@ jobs:
       # 2. Clone ImmortalWrt 25.12.2
       # ============================================================
 
-      - name: Clone ImmortalWrt 25.12.2
+      - name: Clone ImmortalWrt source
 
         shell: bash
 
@@ -58,10 +59,9 @@ jobs:
           cd immortalwrt
 
 
-          echo "ImmortalWrt version"
+          echo "========== ImmortalWrt =========="
 
           git describe --tags --always || true
-
 
           git rev-parse HEAD
 
@@ -70,7 +70,7 @@ jobs:
 
 
       # ============================================================
-      # 3. Clone Netcore N30 Pro USB Fix
+      # 3. Clone Netcore N30 Pro adaptation
       # ============================================================
 
       - name: Clone N30 Pro patch
@@ -92,6 +92,9 @@ jobs:
             n30-patch
 
 
+          echo "N30 Pro patch downloaded"
+
+
 
 
 
@@ -99,7 +102,7 @@ jobs:
       # 4. Apply N30 Pro adaptation
       # ============================================================
 
-      - name: Apply N30 Pro USB VBUS fix
+      - name: Apply N30 Pro adaptation
 
 
         shell: bash
@@ -122,10 +125,10 @@ jobs:
 
 
       # ============================================================
-      # 5. Verify DTS USB VBUS
+      # 5. Verify N30 Pro DTS
       # ============================================================
 
-      - name: Verify N30 Pro DTS
+      - name: Verify N30 Pro DTS USB VBUS
 
 
         shell: bash
@@ -145,13 +148,17 @@ jobs:
 
 
 
-          test -f "$DTS"
+          if [ ! -f "$DTS" ]; then
+
+            echo "ERROR: N30 Pro DTS not found"
+
+            exit 1
+
+          fi
 
 
 
-          grep -Fq \
-          'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' \
-          "$DTS"
+          echo "===== Check USB VBUS regulator ====="
 
 
 
@@ -162,7 +169,7 @@ jobs:
 
 
           grep -Fq \
-          'regulator-boot-on;' \
+          'gpio = <&pio 23 GPIO_ACTIVE_HIGH>;' \
           "$DTS"
 
 
@@ -179,17 +186,23 @@ jobs:
 
 
 
-          echo "USB VBUS fix verified"
+          grep -Fq \
+          'regulator-boot-on;' \
+          "$DTS"
+
+
+
+          echo "USB VBUS DTS check passed"
 
 
 
 
 
       # ============================================================
-      # 6. Verify XHCI
+      # 6. Verify xHCI DTS
       # ============================================================
 
-      - name: Verify XHCI DTS
+      - name: Verify xHCI controller
 
 
         shell: bash
@@ -204,24 +217,29 @@ jobs:
           set -e
 
 
+
           DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
 
 
 
-          grep -A12 \
+          echo "===== xHCI block ====="
+
+
+
+          grep -A15 \
           '&xhci' \
           "$DTS"
 
 
 
-          grep -A12 \
+          grep -A15 \
           '&xhci' \
           "$DTS" \
           | grep -Fq \
           'vbus-supply = <&usb_vbus>;'
 
 
-          grep -A12 \
+          grep -A15 \
           '&xhci' \
           "$DTS" \
           | grep -Fq \
@@ -229,10 +247,14 @@ jobs:
 
 
 
+          echo "xHCI DTS check passed"
+
+
+
 
 
       # ============================================================
-      # 7. Update feeds
+      # 7. Update official feeds
       # ============================================================
 
       - name: Update feeds
@@ -254,105 +276,15 @@ jobs:
 
 
           ./scripts/feeds install -a
-
-
-
-
-
       # ============================================================
-      # 8. Add PassWall feed
+      # 8. Configure N30 Pro packages
       #
-      # 使用 feeds.conf.default
-      # 不直接 clone
-      # 避免 GitHub authentication 错误
-      # ============================================================
-
-
-      - name: Add PassWall feed
-
-
-        shell: bash
-
-
-        working-directory: immortalwrt
-
-
-        run: |
-
-
-          set -e
-
-
-
-          echo \
-          'src-git passwall https://github.com/xiaorouji/openwrt-passwall.git' \
-          >> feeds.conf.default
-
-
-
-          ./scripts/feeds update passwall
-
-
-          ./scripts/feeds install -a -p passwall
-
-      # ============================================================
-      # 9. Prepare custom packages
-      #
-      # 星空组网 IPK:
-      #
-      # 放置于仓库:
-      #
-      # custom_packages/*.ipk
-      #
-      # ============================================================
-
-
-      - name: Prepare custom IPK packages
-
-
-        shell: bash
-
-
-        run: |
-
-
-          set -e
-
-
-          mkdir -p immortalwrt/package/custom
-
-
-
-          if [ -d custom_packages ]; then
-
-
-            cp \
-            custom_packages/*.ipk \
-            immortalwrt/package/custom/ \
-            2>/dev/null \
-            || true
-
-
-          fi
-
-
-
-          echo "Custom packages prepared"
-
-
-
-
-
-      # ============================================================
-      # 10. Configure target and packages
-      #
+      # 不覆盖 .config
       # 使用 scripts/config
-      # 不覆盖原始配置
-      #
       # ============================================================
 
 
-      - name: Configure N30 Pro firmware
+      - name: Configure firmware packages
 
 
         shell: bash
@@ -365,6 +297,10 @@ jobs:
 
 
           set -e
+
+
+
+          echo "========== Configure Target =========="
 
 
 
@@ -385,9 +321,9 @@ jobs:
 
 
 
-          # ============================
+          # ======================================================
           # LuCI
-          # ============================
+          # ======================================================
 
 
           ./scripts/config set \
@@ -402,9 +338,9 @@ jobs:
 
 
 
-          # ============================
-          # USB 3.0
-          # ============================
+          # ======================================================
+          # USB 3.0 / xHCI
+          # ======================================================
 
 
           ./scripts/config set \
@@ -434,9 +370,19 @@ jobs:
 
 
 
-          # ============================
+          # ======================================================
           # USB filesystem
-          # ============================
+          # ======================================================
+
+
+          ./scripts/config set \
+          CONFIG_PACKAGE_block-mount=y
+
+
+
+          ./scripts/config set \
+          CONFIG_PACKAGE_blockd=y
+
 
 
           ./scripts/config set \
@@ -456,9 +402,9 @@ jobs:
 
 
 
-          # ============================
+          # ======================================================
           # 4G / 5G USB modem
-          # ============================
+          # ======================================================
 
 
           ./scripts/config set \
@@ -513,9 +459,9 @@ jobs:
 
 
 
-          # ============================
+          # ======================================================
           # MWAN3 负载均衡
-          # ============================
+          # ======================================================
 
 
           ./scripts/config set \
@@ -530,9 +476,9 @@ jobs:
 
 
 
-          # ============================
-          # Samba4
-          # ============================
+          # ======================================================
+          # Samba4 文件共享
+          # ======================================================
 
 
           ./scripts/config set \
@@ -552,50 +498,73 @@ jobs:
 
 
 
-          # ============================
+          # ======================================================
           # PassWall
-          # ============================
+          #
+          # 不添加 feed
+          # 不clone github
+          #
+          # 如果25.12.2 feeds存在则编译
+          #
+          # ======================================================
 
 
           ./scripts/config set \
-          CONFIG_PACKAGE_luci-app-passwall=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_xray-core=y
-
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_sing-box=y
+          CONFIG_PACKAGE_luci-app-passwall=y \
+          || true
 
 
 
           ./scripts/config set \
-          CONFIG_PACKAGE_kmod-tun=y
+          CONFIG_PACKAGE_xray-core=y \
+          || true
 
 
 
           ./scripts/config set \
-          CONFIG_PACKAGE_kmod-nft-tproxy=y
-
-
-
-
-
-          # ============================
-          # 自动挂载
-          # ============================
-
-
-          ./scripts/config set \
-          CONFIG_PACKAGE_block-mount=y
+          CONFIG_PACKAGE_sing-box=y \
+          || true
 
 
 
           ./scripts/config set \
-          CONFIG_PACKAGE_blockd=y
+          CONFIG_PACKAGE_kmod-tun=y \
+          || true
+
+
+
+          ./scripts/config set \
+          CONFIG_PACKAGE_kmod-nft-tproxy=y \
+          || true
+
+
+
+
+
+          # ======================================================
+          # 网络工具
+          # ======================================================
+
+
+          ./scripts/config set \
+          CONFIG_PACKAGE_curl=y
+
+
+
+          ./scripts/config set \
+          CONFIG_PACKAGE_wget-ssl=y
+
+
+
+          ./scripts/config set \
+          CONFIG_PACKAGE_htop=y
+
+
+
+          ./scripts/config set \
+          CONFIG_PACKAGE_tcpdump=y
+
+
 
 
 
@@ -603,18 +572,18 @@ jobs:
 
 
 
-          echo "N30 Pro configuration finished"
+          echo "Firmware configuration completed"
 
 
 
 
 
       # ============================================================
-      # 11. Verify final config
+      # 9. Verify configuration
       # ============================================================
 
 
-      - name: Verify final configuration
+      - name: Verify package configuration
 
 
         shell: bash
@@ -630,56 +599,48 @@ jobs:
 
 
 
-          grep -Fq \
-          CONFIG_TARGET_mediatek=y \
+          echo "========== Verify =========="
+
+
+
+          grep -F \
+          "CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y" \
           .config
 
 
 
-          grep -Fq \
-          CONFIG_TARGET_mediatek_filogic=y \
+          grep -F \
+          "CONFIG_PACKAGE_kmod-usb3=y" \
           .config
 
 
 
-          grep -Fq \
-          CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y \
+          grep -F \
+          "CONFIG_PACKAGE_kmod-usb-xhci-mtk=y" \
           .config
 
 
 
-          grep -Fq \
-          CONFIG_PACKAGE_kmod-usb-xhci-mtk=y \
+          grep -F \
+          "CONFIG_PACKAGE_mwan3=y" \
           .config
 
 
 
-          grep -Fq \
-          CONFIG_PACKAGE_mwan3=y \
+          grep -F \
+          "CONFIG_PACKAGE_samba4-server=y" \
           .config
 
 
 
-          grep -Fq \
-          CONFIG_PACKAGE_samba4-server=y \
-          .config
-
-
-
-          grep -Fq \
-          CONFIG_PACKAGE_luci-app-passwall=y \
-          .config
-
-
-
-          echo "Configuration verification passed"
+          echo "Configuration verified"
 
 
 
 
 
       # ============================================================
-      # 12. Download source packages
+      # 10. Download package sources
       # ============================================================
 
 
@@ -699,9 +660,59 @@ jobs:
 
 
           make download -j$(nproc) V=s
+      # ============================================================
+      # 11. Prepare custom IPK packages
+      #
+      # 星空组网等第三方IPK
+      #
+      # 不作为源码编译
+      # 直接进入固件 packages 目录
+      #
+      # ============================================================
+
+
+      - name: Prepare custom IPK packages
+
+
+        shell: bash
+
+
+        working-directory: immortalwrt
+
+
+        run: |
+
+
+          set -e
+
+
+
+          mkdir -p files/usr/share/custom-packages
+
+
+
+          if [ -d ../custom_packages ]; then
+
+
+              cp \
+              ../custom_packages/*.ipk \
+              files/usr/share/custom-packages/ \
+              2>/dev/null \
+              || true
+
+
+          fi
+
+
+
+          echo "Custom IPK prepared"
+
+
+
+
 
       # ============================================================
-      # 13. Compile firmware
+      # 12. Build firmware
       # ============================================================
 
 
@@ -721,11 +732,11 @@ jobs:
 
 
 
-          echo "========================================"
+          echo "================================"
 
-          echo "Start ImmortalWrt build"
+          echo "Start building"
 
-          echo "========================================"
+          echo "================================"
 
 
 
@@ -736,10 +747,12 @@ jobs:
 
 
       # ============================================================
-      # 14. Generate package indexes
+      # 13. Generate package index
       #
-      # 解决：
-      # apk install 时提示依赖不存在
+      # 解决 apk:
+      #
+      # ERROR:
+      # unable to select packages
       #
       # ============================================================
 
@@ -764,18 +777,21 @@ jobs:
 
 
 
-          echo "Package indexes generated"
+          echo "Package index generated"
 
 
 
 
 
       # ============================================================
-      # 15. Verify XHCI kernel modules
+      # 14. Verify XHCI modules
+      #
+      # USB供电最终验证
+      #
       # ============================================================
 
 
-      - name: Verify XHCI modules
+      - name: Verify XHCI kernel modules
 
 
         shell: bash
@@ -791,29 +807,51 @@ jobs:
 
 
 
-          echo "Checking XHCI modules"
+          echo "========== XHCI check =========="
 
 
 
-          find build_dir \
+          echo "Checking xhci-hcd"
+
+
+
+          find \
+          build_dir \
           -name "xhci-hcd.ko" \
-          -o \
-          -name "xhci-mtk-hcd.ko"
+          -print
 
 
 
-          HCD=$(find build_dir -name "xhci-hcd.ko" | wc -l)
+          echo "Checking xhci-mtk"
+
+
+
+          find \
+          build_dir \
+          -name "xhci-mtk-hcd.ko" \
+          -print
+
+
+
+
+
+          XHCI=$(find build_dir -name "xhci-hcd.ko" | wc -l)
+
 
 
           MTK=$(find build_dir -name "xhci-mtk-hcd.ko" | wc -l)
 
 
 
-          if [ "$HCD" -eq 0 ]; then
 
-            echo "ERROR: xhci-hcd.ko missing"
 
-            exit 1
+          if [ "$XHCI" -eq 0 ]; then
+
+
+              echo "ERROR: missing xhci-hcd.ko"
+
+              exit 1
+
 
           fi
 
@@ -821,26 +859,28 @@ jobs:
 
           if [ "$MTK" -eq 0 ]; then
 
-            echo "ERROR: xhci-mtk-hcd.ko missing"
 
-            exit 1
+              echo "ERROR: missing xhci-mtk-hcd.ko"
+
+              exit 1
+
 
           fi
 
 
 
-          echo "XHCI verification passed"
+          echo "XHCI OK"
 
 
 
 
 
       # ============================================================
-      # 16. Verify firmware output
+      # 15. Verify firmware output
       # ============================================================
 
 
-      - name: Verify firmware
+      - name: Verify output files
 
 
         shell: bash
@@ -860,15 +900,25 @@ jobs:
 
 
 
-          test -d "$TARGET"
+          if [ ! -d "$TARGET" ]; then
+
+
+              echo "Firmware output missing"
+
+
+              exit 1
+
+
+          fi
 
 
 
-          echo "Generated firmware files:"
+          echo "========== Firmware =========="
 
 
 
-          find "$TARGET" \
+          find \
+          "$TARGET" \
           -maxdepth 2 \
           -type f \
           | sort
@@ -878,7 +928,66 @@ jobs:
 
 
       # ============================================================
-      # 17. Upload firmware and packages
+      # 16. Generate build report
+      # ============================================================
+
+
+      - name: Generate report
+
+
+        shell: bash
+
+
+        working-directory: immortalwrt
+
+
+        run: |
+
+
+          set -e
+
+
+
+          cat > n30pro-build-report.txt <<EOF
+
+ImmortalWrt 25.12.2
+Device:
+Netcore N30 Pro
+
+Features:
+
+USB VBUS:
+GPIO23
+
+USB Controller:
+MediaTek XHCI
+
+Packages:
+
+USB3
+USB Storage
+4G/5G modem
+MWAN3
+Samba4
+
+Custom IPK:
+$(ls files/usr/share/custom-packages 2>/dev/null || true)
+
+Build:
+SUCCESS
+
+EOF
+
+
+
+          cat n30pro-build-report.txt
+
+
+
+
+
+      # ============================================================
+      # 17. Upload firmware
       # ============================================================
 
 
@@ -900,8 +1009,7 @@ jobs:
             immortalwrt/bin/targets/mediatek/filogic/**
 
 
-            immortalwrt/bin/packages/**
-
+            immortalwrt/n30pro-build-report.txt
 
 
           retention-days: 7
