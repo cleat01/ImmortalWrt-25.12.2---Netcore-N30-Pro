@@ -3,7 +3,7 @@
 
 ## ✨ 固件特性
 - 基于官方 ImmortalWrt v25.12.2 源码编译，内核6.12
-- 设备：磊科 Netcore N30 Pro（MT7988A，aarch64_cortex-a53）
+- 设备：磊科 Netcore N30 Pro（MT7981B，aarch64_cortex-a53）
 - ✅ 修复USB VBUS供电DTS补丁，USB硬盘/U盘可正常识别供电
 - 包管理器：新版`apk`（不再支持旧`.ipk`软件包，请使用`.apk`格式）
 - 预置基础LuCI中文界面，可按需在编译脚本增减插件
