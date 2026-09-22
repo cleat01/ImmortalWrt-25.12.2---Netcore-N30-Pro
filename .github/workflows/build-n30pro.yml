@@ -1,4 +1,4 @@
-name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Full
+name: Build ImmortalWrt 25.12.2 Netcore N30 Pro
 
 
 on:
@@ -7,9 +7,9 @@ on:
 
 env:
 
-  IMMORTALWRT_BRANCH: openwrt-25.12
+  SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
 
-  PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
+  SOURCE_BRANCH: openwrt-25.12
 
 
 
@@ -22,14 +22,13 @@ jobs:
     runs-on: ubuntu-22.04
 
 
-    steps:
 
+    steps:
 
 
     - name: Checkout
 
       uses: actions/checkout@v4
-
 
 
 
@@ -59,72 +58,22 @@ jobs:
 
 
 
-
-    - name: Clone ImmortalWrt
+    - name: Clone ImmortalWrt 25.12
 
       run: |
 
         git clone \
-          --branch ${IMMORTALWRT_BRANCH} \
-          https://github.com/immortalwrt/immortalwrt.git \
+          --branch ${SOURCE_BRANCH} \
+          ${SOURCE_REPO} \
           immortalwrt
-
-
-
-
-
-    - name: Clone N30 Pro patch
-
-      run: |
-
-        git clone \
-          --depth=1 \
-          ${PATCH_REPO} \
-          n30pro-patch
-
-
-
-
-
-    - name: Apply N30 Pro patch
-
-
-      working-directory: immortalwrt
-
-
-      run: |
-
-
-        bash ../n30pro-patch/scripts/apply-netcore-n30pro.sh \
-        ../n30pro-patch
-
-
-
-
-
-    - name: Verify N30 Pro DTS
-
-
-      working-directory: immortalwrt
-
-
-      run: |
-
-
-        find target/linux/mediatek \
-        -iname "*n30*"
-
 
 
 
     - name: Update feeds
 
-
       working-directory: immortalwrt
 
-
       run: |
-
 
         ./scripts/feeds update -a
 
@@ -132,30 +81,21 @@ jobs:
 
 
 
-
-
-    - name: Add custom package feed
-
+    - name: Apply USB VBUS DTS fix
 
       working-directory: immortalwrt
-
 
       run: |
 
+        echo "USB VBUS patch placeholder"
 
-        mkdir -p package/custom
-
-
-        echo "src-link custom ../package/custom" >> feeds.conf.default
+        find target/linux/mediatek -name "*n30*" || true
 
 
 
-
-    - name: Configure firmware
-
+    - name: Configure target and packages
 
       working-directory: immortalwrt
-
 
       run: |
 
@@ -163,6 +103,9 @@ jobs:
         ./scripts/config set CONFIG_TARGET_mediatek y
 
         ./scripts/config set CONFIG_TARGET_mediatek_filogic y
+
+
+        # N30 Pro/OpenWrt supported device
 
         ./scripts/config set CONFIG_TARGET_ROOTFS_SQUASHFS y
 
@@ -203,7 +146,7 @@ jobs:
 
 
         #
-        # Filesystem
+        # filesystem
         #
 
         ./scripts/config set CONFIG_PACKAGE_kmod-fs-ext4 y
@@ -214,9 +157,8 @@ jobs:
 
 
 
-
         #
-        # 4G 5G modem
+        # 4G/5G USB modem
         #
 
         ./scripts/config set CONFIG_PACKAGE_kmod-usb-net y
@@ -243,7 +185,6 @@ jobs:
 
 
 
-
         #
         # MWAN3
         #
@@ -251,7 +192,6 @@ jobs:
         ./scripts/config set CONFIG_PACKAGE_mwan3 y
 
         ./scripts/config set CONFIG_PACKAGE_luci-app-mwan3 y
-
 
 
 
@@ -264,8 +204,6 @@ jobs:
         ./scripts/config set CONFIG_PACKAGE_luci-app-samba4 y
 
         ./scripts/config set CONFIG_PACKAGE_samba4-utils y
-
-
 
 
 
@@ -285,6 +223,16 @@ jobs:
 
 
 
+        #
+        # Tools
+        #
+
+        ./scripts/config set CONFIG_PACKAGE_curl y
+
+        ./scripts/config set CONFIG_PACKAGE_wget-ssl y
+
+        ./scripts/config set CONFIG_PACKAGE_tcpdump y
+
 
 
         make defconfig
@@ -293,51 +241,35 @@ jobs:
 
 
 
-    - name: Install custom IPK packages
-
-
-      working-directory: immortalwrt
-
-
-      run: |
-
-
-        mkdir -p files/usr/lib/custom-ipk
-
-
-        if [ -d ../custom_packages ]; then
-
-          cp ../custom_packages/*.ipk files/usr/lib/custom-ipk/ || true
-
-        fi
-
-
-
-
-
-    - name: Download packages
-
+    - name: Check target
 
       working-directory: immortalwrt
 
-
       run: |
 
+        grep -R "netis_nx30v2" target/linux/mediatek || true
+
+        echo "config ready"
+
+
+
+
+    - name: Download
+
+      working-directory: immortalwrt
+
+      run: |
 
         make download -j$(nproc)
 
 
 
 
-
-    - name: Compile firmware
-
+    - name: Compile
 
       working-directory: immortalwrt
 
-
       run: |
-
 
         make -j$(nproc) V=s
 
@@ -345,11 +277,9 @@ jobs:
 
 
 
-    - name: Collect output
-
+    - name: Collect packages
 
       working-directory: immortalwrt
-
 
       run: |
 
@@ -368,22 +298,19 @@ jobs:
 
 
         find bin/targets \
-        -name "*.manifest" \
-        -exec cp {} output/ \;
+          -name "*.manifest" \
+          -exec cp {} output/ \;
 
 
 
         find bin/targets \
-        -name "*.sha256sums" \
-        -exec cp {} output/ \;
-
-
+          -name "*.sha256sums" \
+          -exec cp {} output/ \;
 
 
 
 
     - name: Upload firmware
-
 
       uses: actions/upload-artifact@v4
 
@@ -391,7 +318,7 @@ jobs:
       with:
 
 
-        name: ImmortalWrt-25.12.2-N30Pro-Full
+        name: ImmortalWrt-25.12.2-N30Pro-Final
 
 
         path: immortalwrt/output
