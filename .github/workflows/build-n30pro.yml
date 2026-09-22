@@ -6,30 +6,25 @@ on:
 
 
 env:
-
+  IMMORTALWRT_REPO: https://github.com/immortalwrt/immortalwrt.git
   IMMORTALWRT_BRANCH: openwrt-25.12
-
   IMMORTALWRT_TAG: v25.12.2
 
-  PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
+  N30_PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
 
 
 
 jobs:
 
-
   build:
 
-
     runs-on: ubuntu-24.04
-
 
 
     steps:
 
 
-
-    - name: Checkout
+    - name: Checkout build repository
 
       uses: actions/checkout@v4
 
@@ -40,7 +35,6 @@ jobs:
       run: |
 
         sudo apt update
-
 
         sudo apt install -y \
           build-essential \
@@ -62,17 +56,14 @@ jobs:
 
 
 
-
-    - name: Clone ImmortalWrt 25.12.2
+    - name: Clone ImmortalWrt source
 
       run: |
 
-
         git clone \
           --branch ${IMMORTALWRT_BRANCH} \
-          https://github.com/immortalwrt/immortalwrt.git \
+          ${IMMORTALWRT_REPO} \
           immortalwrt
-
 
 
         cd immortalwrt
@@ -82,51 +73,44 @@ jobs:
 
 
 
-
-    - name: Clone N30 Pro patch
+    - name: Clone Netcore N30 Pro patch
 
       run: |
 
-
         git clone \
           --depth=1 \
-          ${PATCH_REPO} \
+          ${N30_PATCH_REPO} \
           n30pro-patch
 
 
 
-
-    - name: Apply N30 Pro patch
+    - name: Apply Netcore N30 Pro patch
 
       working-directory: immortalwrt
 
       run: |
-
 
         bash ../n30pro-patch/scripts/apply-netcore-n30pro.sh \
-        ../n30pro-patch
+          ../n30pro-patch
 
 
 
-
-    - name: Verify N30 Pro adaptation
+    - name: Verify N30 Pro patch result
 
       working-directory: immortalwrt
 
       run: |
 
+        echo "Checking Netcore N30 Pro DTS..."
 
-        echo "Check DTS"
-
-
-        find target/linux/mediatek -name "*netcore*n30*"
-
-
-        echo "Check device"
+        find target/linux/mediatek \
+          -iname "*netcore*n30*"
 
 
-        grep -R "netcore_n30" target/linux/mediatek/image
+        echo "Checking device definition..."
 
+        grep -R "netcore_n30" \
+          target/linux/mediatek/image || true
 
 
 
@@ -136,114 +120,58 @@ jobs:
 
       run: |
 
-
         ./scripts/feeds update -a
 
-
         ./scripts/feeds install -a
-
-
-
-
-
-    - name: Generate base config
+    - name: Prepare N30 Pro config
 
       working-directory: immortalwrt
 
       run: |
 
-
         cat > .config <<'EOF'
 
-
 CONFIG_TARGET_mediatek=y
-
 CONFIG_TARGET_mediatek_filogic=y
-
-
-CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n30-pro=y
-
-
 
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
 
 
-
 CONFIG_PACKAGE_luci=y
-
 CONFIG_PACKAGE_luci-ssl=y
 
 
-
-EOF
-
-
-
-        make defconfig
-
-
-
-
-
-    - name: Add required packages
-
-      working-directory: immortalwrt
-
-      run: |
-
-
-        cat >> .config <<'EOF'
-
-
-#
 # USB controller
-#
 
 CONFIG_PACKAGE_kmod-usb3=y
-
 CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
-
 CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
 
 
-
-#
 # USB storage
-#
 
 CONFIG_PACKAGE_kmod-usb-storage=y
-
 CONFIG_PACKAGE_kmod-usb-storage-uas=y
 
 CONFIG_PACKAGE_block-mount=y
 
 
+# filesystem
 
 CONFIG_PACKAGE_kmod-fs-ext4=y
-
 CONFIG_PACKAGE_kmod-fs-vfat=y
-
 CONFIG_PACKAGE_kmod-fs-exfat=y
 
 
-
-#
-# USB 4G/5G modem
-#
+# USB modem 4G/5G
 
 CONFIG_PACKAGE_kmod-usb-net=y
-
 CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
-
 CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
-
 CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
 
-
 CONFIG_PACKAGE_kmod-usb-serial=y
-
 CONFIG_PACKAGE_kmod-usb-serial-option=y
-
 CONFIG_PACKAGE_kmod-usb-wdm=y
 
 
@@ -255,9 +183,7 @@ CONFIG_PACKAGE_umbim=y
 
 
 
-#
 # PassWall
-#
 
 CONFIG_PACKAGE_luci-app-passwall=y
 
@@ -278,9 +204,7 @@ CONFIG_PACKAGE_kmod-nft-tproxy=y
 
 
 
-#
 # MWAN3
-#
 
 CONFIG_PACKAGE_mwan3=y
 
@@ -288,14 +212,11 @@ CONFIG_PACKAGE_luci-app-mwan3=y
 
 
 
-#
 # Samba4
-#
 
 CONFIG_PACKAGE_samba4-server=y
 
 CONFIG_PACKAGE_luci-app-samba4=y
-
 
 
 EOF
@@ -306,8 +227,27 @@ EOF
 
 
 
+    - name: Check target device
 
-    - name: Compile
+      working-directory: immortalwrt
+
+      run: |
+
+
+        echo "Checking Netcore N30 Pro target"
+
+
+        grep -R "Netcore N30" target/linux/mediatek/image || true
+
+
+        echo "Checking DTS"
+
+
+        find target/linux/mediatek -iname "*n30*"
+
+
+
+    - name: Download source packages
 
       working-directory: immortalwrt
 
@@ -317,13 +257,19 @@ EOF
         make download -j$(nproc)
 
 
+
+    - name: Compile firmware
+
+      working-directory: immortalwrt
+
+      run: |
+
+
         make -j$(nproc) V=s
 
 
 
-
-
-    - name: Collect firmware packages
+    - name: Collect firmware and package repository
 
       working-directory: immortalwrt
 
@@ -334,10 +280,10 @@ EOF
 
 
 
-        cp -r bin/targets output/
+        cp -a bin/targets output/
 
 
-        cp -r bin/packages output/
+        cp -a bin/packages output/
 
 
         cp .config output/config
@@ -350,16 +296,18 @@ EOF
 
 
 
+        find bin/targets \
+        -name "*.sha256sums" \
+        -exec cp {} output/ \;
 
-    - name: Upload firmware
+
+
+    - name: Upload build result
 
       uses: actions/upload-artifact@v4
 
-
       with:
 
-
-        name: ImmortalWrt-25.12.2-N30Pro-USB-Fixed
-
+        name: ImmortalWrt-25.12.2-Netcore-N30Pro
 
         path: immortalwrt/output
