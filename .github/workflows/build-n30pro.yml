@@ -1,26 +1,38 @@
 name: Build ImmortalWrt 25.12.2 Netcore N30 Pro
 
+
 on:
   workflow_dispatch:
 
+
 env:
+  IMMORTALWRT_REPO: https://github.com/immortalwrt/immortalwrt.git
   IMMORTALWRT_BRANCH: openwrt-25.12
-  PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
+  N30_PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
+
 
 jobs:
+
   build:
 
     runs-on: ubuntu-22.04
 
+
     steps:
 
+
       - name: Checkout
+
         uses: actions/checkout@v4
 
 
+
       - name: Install dependencies
+
         run: |
+
           sudo apt update
+
           sudo apt install -y \
             build-essential \
             clang \
@@ -40,104 +52,275 @@ jobs:
             zlib1g-dev
 
 
-      - name: Clone ImmortalWrt
+
+      - name: Clone ImmortalWrt 25.12 source
+
         run: |
+
           git clone \
             --branch ${IMMORTALWRT_BRANCH} \
-            https://github.com/immortalwrt/immortalwrt.git \
+            ${IMMORTALWRT_REPO} \
             immortalwrt
 
 
-      - name: Clone N30 Pro patch
+          cd immortalwrt
+
+
+          git log -1
+
+
+
+      - name: Clone N30 Pro adaptation patch
+
         run: |
+
           git clone \
             --depth=1 \
-            ${PATCH_REPO} \
+            ${N30_PATCH_REPO} \
             n30pro-patch
 
 
+
       - name: Apply N30 Pro patch
+
         working-directory: immortalwrt
+
         run: |
+
           bash ../n30pro-patch/scripts/apply-netcore-n30pro.sh ../n30pro-patch
 
 
-      - name: Update feeds
+
+      - name: Verify patch
+
         working-directory: immortalwrt
+
         run: |
+
+          echo "Check N30 Pro DTS"
+
+          find target/linux/mediatek -iname "*n30*"
+
+
+          echo "Check device definition"
+
+          grep -R "netcore_n30" target/linux/mediatek || true
+
+
+
+      - name: Update feeds
+
+        working-directory: immortalwrt
+
+        run: |
+
           ./scripts/feeds update -a
+
           ./scripts/feeds install -a
 
+      - name: Install config helper
 
-      - name: Configure firmware
         working-directory: immortalwrt
+
         run: |
 
-          cat > .config <<'EOF'
-CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_filogic=y
-CONFIG_TARGET_ROOTFS_SQUASHFS=y
+          sudo apt install -y python3-pip
 
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-ssl=y
+          python3 -m pip install --user kconfiglib
 
-CONFIG_PACKAGE_kmod-usb3=y
-CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
-CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
-CONFIG_PACKAGE_kmod-usb-storage=y
-CONFIG_PACKAGE_kmod-usb-storage-uas=y
-CONFIG_PACKAGE_block-mount=y
 
-CONFIG_PACKAGE_kmod-fs-ext4=y
-CONFIG_PACKAGE_kmod-fs-exfat=y
-CONFIG_PACKAGE_kmod-fs-vfat=y
 
-CONFIG_PACKAGE_luci-app-passwall=y
-CONFIG_PACKAGE_xray-core=y
-CONFIG_PACKAGE_sing-box=y
-CONFIG_PACKAGE_kmod-tun=y
-CONFIG_PACKAGE_kmod-nft-tproxy=y
+      - name: Configure packages
 
-CONFIG_PACKAGE_mwan3=y
-CONFIG_PACKAGE_luci-app-mwan3=y
+        working-directory: immortalwrt
 
-CONFIG_PACKAGE_samba4-server=y
-CONFIG_PACKAGE_luci-app-samba4=y
-EOF
+        run: |
+
+          ./scripts/config set CONFIG_TARGET_mediatek y
+
+          ./scripts/config set CONFIG_TARGET_mediatek_filogic y
+
+          ./scripts/config set CONFIG_TARGET_ROOTFS_SQUASHFS y
+
+
+
+          # LuCI
+
+          ./scripts/config set CONFIG_PACKAGE_luci y
+
+          ./scripts/config set CONFIG_PACKAGE_luci-ssl y
+
+
+
+          # USB xHCI
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb3 y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-xhci-hcd y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-xhci-mtk y
+
+
+
+          # USB storage
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-storage y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-storage-uas y
+
+          ./scripts/config set CONFIG_PACKAGE_block-mount y
+
+
+
+          # Filesystem
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-fs-ext4 y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-fs-vfat y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-fs-exfat y
+
+
+
+          # USB 4G/5G modem
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-net y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-net-cdc-ether y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-net-cdc-ncm y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-net-qmi-wwan y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-serial y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-serial-option y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-usb-wdm y
+
+          ./scripts/config set CONFIG_PACKAGE_usb-modeswitch y
+
+          ./scripts/config set CONFIG_PACKAGE_uqmi y
+
+          ./scripts/config set CONFIG_PACKAGE_umbim y
+
+
+
+          # PassWall
+
+          ./scripts/config set CONFIG_PACKAGE_luci-app-passwall y
+
+          ./scripts/config set CONFIG_PACKAGE_xray-core y
+
+          ./scripts/config set CONFIG_PACKAGE_sing-box y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-tun y
+
+          ./scripts/config set CONFIG_PACKAGE_kmod-nft-tproxy y
+
+
+
+          # MWAN3
+
+          ./scripts/config set CONFIG_PACKAGE_mwan3 y
+
+          ./scripts/config set CONFIG_PACKAGE_luci-app-mwan3 y
+
+
+
+          # Samba4
+
+          ./scripts/config set CONFIG_PACKAGE_samba4-server y
+
+          ./scripts/config set CONFIG_PACKAGE_luci-app-samba4 y
+
+
 
           make defconfig
 
 
-      - name: Check N30 Pro DTS
-        working-directory: immortalwrt
-        run: |
-          find target/linux/mediatek -iname "*n30*"
 
 
-      - name: Download
+
+      - name: Verify N30 Pro target generated
+
         working-directory: immortalwrt
+
         run: |
+
+          echo "=== Device check ==="
+
+          grep -R "netcore_n30" target/linux/mediatek || true
+
+
+          echo "=== DTS check ==="
+
+          find target/linux/mediatek -iname "*netcore*n30*"
+
+
+
+
+      - name: Download packages
+
+        working-directory: immortalwrt
+
+        run: |
+
           make download -j$(nproc)
 
 
-      - name: Compile
+
+
+      - name: Build firmware
+
         working-directory: immortalwrt
+
         run: |
+
           make -j$(nproc) V=s
 
 
-      - name: Collect files
+
+
+      - name: Prepare output
+
         working-directory: immortalwrt
+
         run: |
-          mkdir output
+
+          mkdir -p output
+
 
           cp -a bin/targets output/
+
+
           cp -a bin/packages output/
+
+
           cp .config output/config
 
 
-      - name: Upload
+
+          find bin/targets \
+          -name "*.manifest" \
+          -exec cp {} output/ \;
+
+
+
+          find bin/targets \
+          -name "*.sha256sums" \
+          -exec cp {} output/ \;
+
+
+
+
+
+      - name: Upload firmware
+
         uses: actions/upload-artifact@v4
+
         with:
-          name: ImmortalWrt-25.12.2-N30Pro
+
+          name: ImmortalWrt-25.12.2-Netcore-N30Pro
+
           path: immortalwrt/output
