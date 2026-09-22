@@ -1,4 +1,4 @@
-name: Build ImmortalWrt 25.12.2 - Netcore N30 Pro Complete
+name: Build ImmortalWrt 25.12.2 - Netcore N30 Pro Full
 
 on:
   workflow_dispatch:
@@ -17,7 +17,10 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. 安装编译环境
+      # 1. Ubuntu 24.04 编译环境
+      #
+      # 注意：
+      # Ubuntu 24.04 / Python 3.12 没有 python3-distutils
       # ============================================================
       - name: Install build dependencies
         run: |
@@ -75,55 +78,76 @@ jobs:
             lrzsz \
             mkisofs \
             nano \
-            npm \
-            openssh-client \
+            ninja-build \
+            p7zip \
+            p7zip-full \
             patch \
-            perl \
+            pkgconf \
             python3 \
-            python3-distutils \
+            python3-docutils \
             python3-pip \
+            python3-ply \
+            python3-pyelftools \
             python3-setuptools \
             qemu-utils \
+            re2c \
             rsync \
+            scons \
+            squashfs-tools \
+            subversion \
             swig \
+            texinfo \
             unzip \
-            uuid-dev \
             wget \
-            xsltproc \
-            zlib1g-dev
+            xmlto \
+            xxd \
+            zlib1g-dev \
+            zstd
+
+          echo "========================================"
+          echo "Host environment"
+          echo "========================================"
+
+          python3 --version
+          pip3 --version
+          gcc --version | head -1
+          clang --version | head -1
+          make --version | head -1
 
       # ============================================================
-      # 2. 下载 ImmortalWrt + N30 Pro 补丁
+      # 2. ImmortalWrt + N30 Pro 补丁
       #
-      # 目录必须是：
+      # 目录必须平级：
       #
       # $GITHUB_WORKSPACE/
       # ├── immortalwrt/
       # └── Netcore-N30-Pro-patch-for-OpenWrt/
       # ============================================================
-      - name: Clone ImmortalWrt and Netcore N30 Pro patch
+      - name: Clone ImmortalWrt and N30 Pro patch
         run: |
           set -eux
 
           cd "$GITHUB_WORKSPACE"
 
-          git clone --depth=1 --branch "${IW_BRANCH}" \
+          git clone \
+            --depth=1 \
+            --branch "${IW_BRANCH}" \
             https://github.com/immortalwrt/immortalwrt.git \
             immortalwrt
 
-          git clone --depth=1 \
+          git clone \
+            --depth=1 \
             "${N30_PATCH_REPO}" \
             Netcore-N30-Pro-patch-for-OpenWrt
 
-          echo "===== Workspace ====="
-          find "$GITHUB_WORKSPACE" \
-            -maxdepth 2 \
-            -type f \
-            | sort \
-            | head -200
+          echo "========================================"
+          echo "Workspace"
+          echo "========================================"
+
+          ls -la "$GITHUB_WORKSPACE"
 
       # ============================================================
-      # 3. 应用 N30 Pro 官方社区适配
+      # 3. 应用 N30 Pro 补丁
       # ============================================================
       - name: Apply Netcore N30 Pro adaptation
         working-directory: immortalwrt
@@ -140,19 +164,23 @@ jobs:
           test -d \
             ../Netcore-N30-Pro-patch-for-OpenWrt/patches
 
-          find ../Netcore-N30-Pro-patch-for-OpenWrt/patches \
+          echo "Patch files:"
+          find \
+            ../Netcore-N30-Pro-patch-for-OpenWrt/patches \
             -maxdepth 1 \
             -type f \
             -name '*.patch' \
-            -print
+            -print \
+            | sort
 
-          bash ../Netcore-N30-Pro-patch-for-OpenWrt/scripts/apply-netcore-n30pro.sh \
+          bash \
+            ../Netcore-N30-Pro-patch-for-OpenWrt/scripts/apply-netcore-n30pro.sh \
             ../Netcore-N30-Pro-patch-for-OpenWrt
 
       # ============================================================
       # 4. 验证 N30 Pro DTS / USB VBUS
       # ============================================================
-      - name: Verify Netcore N30 Pro DTS and USB VBUS
+      - name: Verify N30 Pro USB VBUS DTS
         working-directory: immortalwrt
         run: |
           set -eux
@@ -161,50 +189,56 @@ jobs:
 
           test -f "$DTS"
 
-          echo "===== DTS ====="
-          sed -n '1,260p' "$DTS"
+          echo "========================================"
+          echo "N30 Pro DTS"
+          echo "========================================"
 
-          echo "===== Required N30 Pro USB items ====="
+          sed -n '1,300p' "$DTS"
+
+          echo
+          echo "========================================"
+          echo "USB VBUS checks"
+          echo "========================================"
 
           grep -q 'model.*N30 Pro' "$DTS"
+
           grep -q 'compatible.*netcore,n30-pro' "$DTS"
 
-          # GPIO23
           grep -q '<&pio 23 GPIO_ACTIVE_HIGH>' "$DTS"
 
-          # 5V USB VBUS
-          grep -q '5000000' "$DTS"
-
-          # regulator
           grep -q 'regulator-usb-vbus' "$DTS"
 
-          # boot-on
+          grep -q '5000000' "$DTS"
+
           grep -q 'regulator-boot-on' "$DTS"
 
-          # USB PHY
           grep -q '&usb_phy' "$DTS"
 
-          # XHCI VBUS supply
           grep -q 'vbus-supply.*usb_vbus' "$DTS"
 
-          echo "N30 Pro DTS USB VBUS verification: PASS"
+          echo "N30 Pro USB VBUS DTS: PASS"
 
       # ============================================================
-      # 5. 验证 Device Tree / target integration
+      # 5. 验证 N30 Pro board integration
       # ============================================================
-      - name: Verify board integration
+      - name: Verify N30 Pro board integration
         working-directory: immortalwrt
         run: |
           set -eux
 
-          echo "===== Search N30 Pro integration ====="
+          echo "========================================"
+          echo "N30 Pro integration"
+          echo "========================================"
 
           grep -Rni \
             'netcore-n30-pro' \
             target/linux/mediatek \
             | head -100
 
-          echo "===== Device definition ====="
+          echo
+          echo "========================================"
+          echo "Device definition"
+          echo "========================================"
 
           grep -Rni \
             'Device/netcore_n30-pro' \
@@ -212,29 +246,15 @@ jobs:
             || true
 
       # ============================================================
-      # 6. PassWall feed
+      # 6. 更新 ImmortalWrt 自己的 feeds
       #
-      # 不直接依赖旧的 OpenWrt feed 里的旧 PassWall。
-      # 使用 PassWall 官方当前仓库。
+      # 不添加 JLU
+      # 不添加 OpenWrt 官方 feed
+      # 不添加 PassWall main
+      #
+      # 使用 v25.12.2 对应的 ImmortalWrt feeds。
       # ============================================================
-      - name: Add PassWall feeds
-        working-directory: immortalwrt
-        run: |
-          set -eux
-
-          cat >> feeds.conf.default <<'EOF'
-
-          src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main
-          src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main
-          EOF
-
-          echo "===== PassWall feeds ====="
-          tail -10 feeds.conf.default
-
-      # ============================================================
-      # 7. 更新 / 安装 feeds
-      # ============================================================
-      - name: Update and install feeds
+      - name: Update ImmortalWrt feeds
         working-directory: immortalwrt
         run: |
           set -eux
@@ -243,82 +263,179 @@ jobs:
           ./scripts/feeds install -a
 
       # ============================================================
-      # 8. 建立安全的软件包发现函数
+      # 7. 建立可靠的软件包检测函数
       #
-      # 重点：
-      # 不再盲目写 CONFIG_PACKAGE_xxx=y。
+      # 优先使用 scripts/feeds search。
+      # 不再通过：
       #
-      # 如果当前 ImmortalWrt 25.12.2 源码中没有这个包：
-      # -> SKIP
+      # grep "Package/xxx"
       #
-      # 存在：
-      # -> ENABLE
+      # 判断，因为很多 Makefile 使用：
       #
-      # 这样可以避免之前因为不存在的 package symbol
-      # 导致 make defconfig 失败。
+      # define Package/$(PKG_NAME)
+      #
+      # 会导致错误判断。
       # ============================================================
-      - name: Prepare package selection helpers
+      - name: Create package detection helpers
         working-directory: immortalwrt
         run: |
           set -eux
 
-          cat > /tmp/enable-package.sh <<'EOF'
+          cat > /tmp/package-exists.sh <<'EOF'
           #!/bin/bash
 
           set -u
 
           PKG="$1"
-          CONFIG_FILE="$2"
-          REQUIRED="${3:-optional}"
 
-          found=0
-
-          # 普通 Package
-          if grep -Rqs \
-            -E "^[[:space:]]*(Package|define)[^#]*${PKG}" \
-            package feeds target \
-            2>/dev/null; then
-            found=1
-          fi
-
-          # KernelPackage
-          if grep -Rqs \
-            -E "^[[:space:]]*(KernelPackage|define)[^#]*${PKG}" \
-            package feeds target \
-            2>/dev/null; then
-            found=1
-          fi
-
-          # 更直接的 package 目录检测
-          if find package feeds target \
-            -type f \
-            \( -name Makefile -o -name '*.mk' \) \
-            -print0 2>/dev/null \
-            | xargs -0 grep -l \
-              -E "Package/${PKG}|KernelPackage/${PKG}" \
-              2>/dev/null \
-            | grep -q .; then
-            found=1
-          fi
-
-          if [ "$found" = "1" ]; then
-            echo "CONFIG_PACKAGE_${PKG}=y" >> "$CONFIG_FILE"
-            echo "[ENABLE] $PKG"
+          # --------------------------------------------------------
+          # 1. scripts/feeds search
+          # --------------------------------------------------------
+          if ./scripts/feeds search "$PKG" 2>/dev/null \
+              | grep -Eq "(^|[[:space:]])${PKG}([[:space:]]|$)"; then
+            echo "[FOUND] ${PKG} via feeds"
             exit 0
           fi
 
-          echo "[SKIP] $PKG (package definition not found)"
+          # --------------------------------------------------------
+          # 2. 直接搜索 Makefile 中的 PKG_NAME
+          # --------------------------------------------------------
+          if grep -Rqs \
+              -E "^[[:space:]]*PKG_NAME[[:space:]]*:=[[:space:]]*${PKG}[[:space:]]*$" \
+              feeds package target \
+              2>/dev/null; then
+            echo "[FOUND] ${PKG} via PKG_NAME"
+            exit 0
+          fi
 
-          if [ "$REQUIRED" = "required" ]; then
-            echo "[ERROR] Required package not found: $PKG"
-            exit 1
+          # --------------------------------------------------------
+          # 3. define Package/xxx
+          # --------------------------------------------------------
+          if grep -Rqs \
+              -E "^[[:space:]]*define[[:space:]]+Package/${PKG}[[:space:]]*$" \
+              feeds package target \
+              2>/dev/null; then
+            echo "[FOUND] ${PKG} via Package definition"
+            exit 0
+          fi
+
+          # --------------------------------------------------------
+          # 4. define KernelPackage/xxx
+          # --------------------------------------------------------
+          if grep -Rqs \
+              -E "^[[:space:]]*define[[:space:]]+KernelPackage/${PKG}[[:space:]]*$" \
+              feeds package target \
+              2>/dev/null; then
+            echo "[FOUND] ${PKG} via KernelPackage definition"
+            exit 0
+          fi
+
+          echo "[MISSING] ${PKG}"
+          exit 1
+          EOF
+
+          chmod +x /tmp/package-exists.sh
+
+          cat > /tmp/enable-optional.sh <<'EOF'
+          #!/bin/bash
+
+          set -u
+
+          PKG="$1"
+
+          if /tmp/package-exists.sh "$PKG" >/dev/null 2>&1; then
+            echo "CONFIG_PACKAGE_${PKG}=y" >> .config
+            echo "[ENABLE] ${PKG}"
+          else
+            echo "[SKIP] ${PKG}"
           fi
           EOF
 
-          chmod +x /tmp/enable-package.sh
+          chmod +x /tmp/enable-optional.sh
 
       # ============================================================
-      # 9. 创建基础配置
+      # 8. 检查必须的软件包
+      # ============================================================
+      - name: Verify required package sources
+        working-directory: immortalwrt
+        run: |
+          set -eux
+
+          REQUIRED_PACKAGES="
+          luci-app-passwall
+          mwan3
+          luci-app-mwan3
+          samba4-server
+          luci-app-samba4
+          kmod-usb3
+          kmod-usb-xhci-hcd
+          kmod-usb-xhci-mtk
+          kmod-nft-socket
+          kmod-nft-tproxy
+          "
+
+          for pkg in $REQUIRED_PACKAGES; do
+            echo
+            echo "Checking: ${pkg}"
+            /tmp/package-exists.sh "$pkg"
+          done
+
+          echo
+          echo "========================================"
+          echo "Required package source check: PASS"
+          echo "========================================"
+
+      # ============================================================
+      # 9. Samba4 安全检查
+      #
+      # 2026 年公开的 luci-app-samba4 ACL 问题：
+      #
+      # read:
+      #   /usr/sbin/smbd: [ "exec" ]
+      #
+      # 这是危险配置。
+      #
+      # 如果源码中仍存在这个 ACL，则停止构建。
+      # ============================================================
+      - name: Security check luci-app-samba4 ACL
+        working-directory: immortalwrt
+        run: |
+          set -eux
+
+          ACL_FILES="$(
+            find feeds package \
+              -type f \
+              -path '*/luci-app-samba4/*' \
+              -name '*.json' \
+              -print 2>/dev/null \
+              || true
+          )"
+
+          echo "Samba4 ACL files:"
+          echo "$ACL_FILES"
+
+          if [ -z "$ACL_FILES" ]; then
+            echo "No Samba4 ACL file found yet."
+            echo "The package source will be checked during build."
+            exit 0
+          fi
+
+          if grep -Rni \
+              '"/usr/sbin/smbd"[[:space:]]*:[[:space:]]*\[[[:space:]]*"exec"' \
+              $ACL_FILES \
+              2>/dev/null; then
+
+            echo
+            echo "ERROR:"
+            echo "luci-app-samba4 contains the dangerous smbd exec ACL."
+            echo "Refusing to build this firmware."
+            exit 1
+          fi
+
+          echo "Samba4 ACL security check: PASS"
+
+      # ============================================================
+      # 10. 基础配置
       # ============================================================
       - name: Create base configuration
         working-directory: immortalwrt
@@ -326,52 +443,72 @@ jobs:
           set -eux
 
           cat > .config <<'EOF'
+          # ========================================================
+          # TARGET
+          # ========================================================
+
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
           CONFIG_TARGET_mediatek_filogic_DEVICE_netcore-n30-pro=y
 
-          CONFIG_LUCI=y
+          # ========================================================
+          # LuCI
+          # ========================================================
 
+          CONFIG_LUCI=y
           CONFIG_PACKAGE_luci=y
 
-          # USB 3
+          # ========================================================
+          # USB 3.0
+          # ========================================================
+
           CONFIG_PACKAGE_kmod-usb3=y
           CONFIG_PACKAGE_kmod-usb-xhci-hcd=y
           CONFIG_PACKAGE_kmod-usb-xhci-mtk=y
 
+          # ========================================================
           # USB storage
+          # ========================================================
+
           CONFIG_PACKAGE_kmod-usb-storage=y
           CONFIG_PACKAGE_kmod-fs-ext4=y
           CONFIG_PACKAGE_kmod-fs-vfat=y
 
+          # ========================================================
           # USB tools
+          # ========================================================
+
           CONFIG_PACKAGE_usbutils=y
           CONFIG_PACKAGE_usb-modeswitch=y
 
+          # ========================================================
           # TUN
+          # ========================================================
+
           CONFIG_PACKAGE_kmod-tun=y
 
-          # nftables / firewall
+          # ========================================================
+          # firewall4 / nftables
+          # ========================================================
+
+          CONFIG_PACKAGE_firewall4=y
           CONFIG_PACKAGE_nftables=y
 
-          # useful networking
+          # ========================================================
+          # Basic network tools
+          # ========================================================
+
           CONFIG_PACKAGE_ip-full=y
           CONFIG_PACKAGE_curl=y
           EOF
 
       # ============================================================
-      # 10. USB 随身 WiFi / 4G / 5G / WWAN 模块
+      # 11. USB 4G / 5G / 随身 WiFi
       # ============================================================
-      - name: Add USB tethering and 4G 5G modem packages
+      - name: Enable USB 4G 5G packages
         working-directory: immortalwrt
         run: |
           set -u
-
-          CONFIG_FILE=".config"
-
-          echo "========================================"
-          echo "USB modem / tethering packages"
-          echo "========================================"
 
           for pkg in \
             kmod-usb-net \
@@ -398,52 +535,69 @@ jobs:
             luci-proto-mbim \
             luci-proto-ncm
           do
-            /tmp/enable-package.sh "$pkg" "$CONFIG_FILE" optional \
-              || true
+            /tmp/enable-optional.sh "$pkg"
           done
 
-          echo
-          echo "===== Selected USB / modem packages ====="
+      # ============================================================
+      # 12. PassWall
+      #
+      # 直接进入固件：
+      #
+      # CONFIG_PACKAGE_luci-app-passwall=y
+      # ============================================================
+      - name: Enable PassWall
+        working-directory: immortalwrt
+        run: |
+          set -eux
 
-          grep '^CONFIG_PACKAGE_.*usb' .config || true
-          grep '^CONFIG_PACKAGE_.*qmi' .config || true
-          grep '^CONFIG_PACKAGE_.*mbim' .config || true
-          grep '^CONFIG_PACKAGE_.*ncm' .config || true
-          grep '^CONFIG_PACKAGE_.*rndis' .config || true
+          echo "CONFIG_PACKAGE_luci-app-passwall=y" >> .config
+
+          # 当前 PassWall Makefile 使用的配置符号：
+          #
+          # CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy
+          #
+          # 注意：
+          # 不是 INCLUDE_Nftables_Transparent_Proxy。
+          echo "CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y" >> .config
 
       # ============================================================
-      # 11. PassWall 核心依赖
+      # 13. PassWall 必需 nftables kmod
       #
-      # 根据 PassWall 当前 Makefile：
+      # PassWall 当前 Makefile 会 select：
       #
-      # coreutils
-      # coreutils-base64
-      # coreutils-nohup
-      # coreutils-timeout
-      # curl
-      # chinadns-ng
-      # dns2socks
-      # dnsmasq-full
-      # ip-full
-      # libuci-lua
-      # lua
-      # luci-compat
-      # luci-lib-jsonc
-      # microsocks
-      # resolveip
-      # tcping
-      # lyaml
+      # kmod-nft-socket
+      # kmod-nft-tproxy
+      # kmod-nft-nat
+      # kmod-nf-reject
+      # kmod-nf-reject6
       # ============================================================
-      - name: Add PassWall dependencies
+      - name: Enable PassWall nftables modules
+        working-directory: immortalwrt
+        run: |
+          set -eux
+
+          cat >> .config <<'EOF'
+
+          CONFIG_PACKAGE_kmod-nft-socket=y
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_kmod-nft-nat=y
+          CONFIG_PACKAGE_kmod-nf-reject=y
+          CONFIG_PACKAGE_kmod-nf-reject6=y
+
+          CONFIG_PACKAGE_nftables=y
+          CONFIG_PACKAGE_ipt2socks=y
+          EOF
+
+      # ============================================================
+      # 14. PassWall 用户态依赖
+      #
+      # 即使 PassWall 自己的 LUCI_DEPENDS 会自动拉取，
+      # 这里也明确要求这些包进入固件。
+      # ============================================================
+      - name: Enable PassWall userland dependencies
         working-directory: immortalwrt
         run: |
           set -u
-
-          CONFIG_FILE=".config"
-
-          echo "========================================"
-          echo "PassWall dependencies"
-          echo "========================================"
 
           for pkg in \
             coreutils \
@@ -464,121 +618,90 @@ jobs:
             tcping \
             lyaml
           do
-            /tmp/enable-package.sh "$pkg" "$CONFIG_FILE" optional \
-              || true
+            /tmp/enable-optional.sh "$pkg"
           done
 
       # ============================================================
-      # 12. PassWall nftables 内核依赖
+      # 15. PassWall 常用代理核心
       #
-      # 这两个是之前你安装 PassWall 时最关键的缺失项：
+      # 当前 aarch64 默认项：
       #
-      # kmod-nft-socket
-      # kmod-nft-tproxy
+      # Geoview
+      # HAProxy
+      # Shadowsocks Rust Client
+      # ShadowsocksR Client
+      # Simple Obfs
+      # Sing-box
+      # V2ray Plugin
+      # Xray
       #
-      # 必须和本次编译的 6.12.103 kernel 一起生成。
+      # 不强制开启服务器端和体积较大的额外核心。
       # ============================================================
-      - name: Add PassWall nftables kernel dependencies
-        working-directory: immortalwrt
-        run: |
-          set -e
-
-          CONFIG_FILE=".config"
-
-          echo "========================================"
-          echo "PassWall nftables kernel modules"
-          echo "========================================"
-
-          /tmp/enable-package.sh \
-            kmod-nft-socket \
-            "$CONFIG_FILE" \
-            required
-
-          /tmp/enable-package.sh \
-            kmod-nft-tproxy \
-            "$CONFIG_FILE" \
-            required
-
-          # nftables related dependencies
-          for pkg in \
-            kmod-nft-nat \
-            kmod-nf-reject \
-            kmod-nf-reject6
-          do
-            /tmp/enable-package.sh \
-              "$pkg" \
-              "$CONFIG_FILE" \
-              optional || true
-          done
-
-      # ============================================================
-      # 13. PassWall 核心代理程序
-      #
-      # 这些不是全部强制需要。
-      # 但预装后以后在 LuCI 中切换节点协议时更加方便。
-      # ============================================================
-      - name: Add PassWall proxy cores
+      - name: Enable PassWall proxy cores
         working-directory: immortalwrt
         run: |
           set -u
 
-          CONFIG_FILE=".config"
-
           for pkg in \
-            xray-core \
-            sing-box \
+            geoview \
+            haproxy \
             shadowsocks-rust-sslocal \
             shadowsocksr-libev-ssr-local \
             shadowsocksr-libev-ssr-redir \
             simple-obfs-client \
+            sing-box \
             v2ray-plugin \
-            geoview \
-            v2ray-geoip \
-            v2ray-geosite \
-            unzip \
-            haproxy
+            xray-core \
+            unzip
           do
-            /tmp/enable-package.sh \
-              "$pkg" \
-              "$CONFIG_FILE" \
-              optional || true
+            /tmp/enable-optional.sh "$pkg"
           done
 
       # ============================================================
-      # 14. PassWall / LuCI 语言包
+      # 16. MWAN3 负载均衡
       #
-      # 注意：
-      # PassWall 本体这里不直接装入 rootfs。
-      #
-      # CONFIG_PACKAGE_luci-app-passwall=m
-      #
-      # 会生成 APK，刷机后可以手动安装。
-      # 由于依赖已经提前进入固件，因此不会再因为
-      # kmod-nft-socket / kmod-nft-tproxy 等缺失而失败。
+      # 直接编入固件。
       # ============================================================
-      - name: Select PassWall package for APK build
+      - name: Enable MWAN3
         working-directory: immortalwrt
         run: |
           set -eux
 
-          if find feeds/passwall_luci package \
-              -type f \
-              -name Makefile \
-              -print0 2>/dev/null \
-              | xargs -0 grep -l \
-                'Package/luci-app-passwall' \
-              2>/dev/null \
-              | grep -q .
-          then
-            echo "CONFIG_PACKAGE_luci-app-passwall=m" >> .config
-            echo "PassWall package selected as module."
-          else
-            echo "PassWall Makefile not found."
-            exit 1
-          fi
+          echo "CONFIG_PACKAGE_mwan3=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-mwan3=y" >> .config
 
       # ============================================================
-      # 15. 运行 defconfig
+      # 17. Samba4
+      # ============================================================
+      - name: Enable Samba4
+        working-directory: immortalwrt
+        run: |
+          set -eux
+
+          echo "CONFIG_PACKAGE_samba4-server=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-samba4=y" >> .config
+
+      # ============================================================
+      # 18. Samba / USB storage 辅助组件
+      # ============================================================
+      - name: Enable Samba storage support
+        working-directory: immortalwrt
+        run: |
+          set -u
+
+          for pkg in \
+            block-mount \
+            kmod-fs-ext4 \
+            kmod-fs-vfat \
+            kmod-usb-storage \
+            kmod-usb-storage-extras \
+            kmod-fs-ntfs3
+          do
+            /tmp/enable-optional.sh "$pkg"
+          done
+
+      # ============================================================
+      # 19. 运行 defconfig
       # ============================================================
       - name: Generate final configuration
         working-directory: immortalwrt
@@ -596,23 +719,46 @@ jobs:
 
           echo
           echo "========================================"
-          echo "USB CONFIG"
-          echo "========================================"
-
-          grep '^CONFIG_PACKAGE_kmod-usb' .config || true
-
-          echo
-          echo "========================================"
-          echo "PASSWALL CONFIG"
+          echo "PASSWALL"
           echo "========================================"
 
           grep -E \
-            '^CONFIG_PACKAGE_(kmod-nft|luci-app-passwall|xray|sing-box|chinadns|dns2socks|tcping|geoview|v2ray)' \
+            '^CONFIG_PACKAGE_(luci-app-passwall|kmod-nft|nftables|ipt2socks|xray|sing-box|shadowsocks|shadowsocksr|simple-obfs|v2ray-plugin|geoview|haproxy|chinadns-ng|dns2socks|tcping)' \
+            .config \
+            | sort \
+            || true
+
+          echo
+          echo "========================================"
+          echo "MWAN3"
+          echo "========================================"
+
+          grep -E \
+            '^CONFIG_PACKAGE_(mwan3|luci-app-mwan3)' \
             .config \
             || true
 
+          echo
+          echo "========================================"
+          echo "SAMBA4"
+          echo "========================================"
+
+          grep -E \
+            '^CONFIG_PACKAGE_(samba4|luci-app-samba4)' \
+            .config \
+            || true
+
+          echo
+          echo "========================================"
+          echo "USB"
+          echo "========================================"
+
+          grep '^CONFIG_PACKAGE_kmod-usb' .config \
+            | sort \
+            || true
+
       # ============================================================
-      # 16. 最终配置严格检查
+      # 20. 严格验证最终配置
       # ============================================================
       - name: Verify final configuration
         working-directory: immortalwrt
@@ -620,7 +766,7 @@ jobs:
           set -eux
 
           echo "========================================"
-          echo "Target"
+          echo "TARGET"
           echo "========================================"
 
           grep -Fxq \
@@ -635,11 +781,11 @@ jobs:
             'CONFIG_TARGET_mediatek_filogic_DEVICE_netcore-n30-pro=y' \
             .config
 
-          echo "Target configuration: PASS"
+          echo "Target: PASS"
 
           echo
           echo "========================================"
-          echo "Essential USB"
+          echo "USB"
           echo "========================================"
 
           grep -Fxq \
@@ -654,12 +800,20 @@ jobs:
             'CONFIG_PACKAGE_kmod-usb-xhci-mtk=y' \
             .config
 
-          echo "USB configuration: PASS"
+          echo "USB: PASS"
 
           echo
           echo "========================================"
-          echo "PassWall kernel dependencies"
+          echo "PASSWALL"
           echo "========================================"
+
+          grep -Fxq \
+            'CONFIG_PACKAGE_luci-app-passwall=y' \
+            .config
+
+          grep -Fxq \
+            'CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y' \
+            .config
 
           grep -Fxq \
             'CONFIG_PACKAGE_kmod-nft-socket=y' \
@@ -669,21 +823,44 @@ jobs:
             'CONFIG_PACKAGE_kmod-nft-tproxy=y' \
             .config
 
-          echo "PassWall nft kernel dependencies: PASS"
+          grep -Fxq \
+            'CONFIG_PACKAGE_kmod-nft-nat=y' \
+            .config
+
+          echo "PassWall: PASS"
 
           echo
           echo "========================================"
-          echo "PassWall package"
+          echo "MWAN3"
           echo "========================================"
 
           grep -Fxq \
-            'CONFIG_PACKAGE_luci-app-passwall=m' \
+            'CONFIG_PACKAGE_mwan3=y' \
             .config
 
-          echo "PassWall APK build selection: PASS"
+          grep -Fxq \
+            'CONFIG_PACKAGE_luci-app-mwan3=y' \
+            .config
+
+          echo "MWAN3: PASS"
+
+          echo
+          echo "========================================"
+          echo "SAMBA4"
+          echo "========================================"
+
+          grep -Fxq \
+            'CONFIG_PACKAGE_samba4-server=y' \
+            .config
+
+          grep -Fxq \
+            'CONFIG_PACKAGE_luci-app-samba4=y' \
+            .config
+
+          echo "Samba4: PASS"
 
       # ============================================================
-      # 17. 下载源码包
+      # 21. 下载源码
       # ============================================================
       - name: Download sources
         working-directory: immortalwrt
@@ -693,9 +870,9 @@ jobs:
           make download -j2 V=s
 
       # ============================================================
-      # 18. 编译
+      # 22. 编译
       # ============================================================
-      - name: Build firmware and packages
+      - name: Build firmware
         working-directory: immortalwrt
         run: |
           set -eux
@@ -703,161 +880,241 @@ jobs:
           make -j"$(nproc)" V=s
 
       # ============================================================
-      # 19. 检查最终 kernel
-      # ============================================================
-      - name: Verify final kernel
-        working-directory: immortalwrt
-        run: |
-          set -eux
-
-          echo "===== Kernel config ====="
-
-          find build_dir \
-            -type f \
-            -name .config \
-            -path '*linux*' \
-            -print \
-            | head -20
-
-          echo
-          echo "===== Kernel version ====="
-
-          find build_dir \
-            -type f \
-            -name Makefile \
-            -path '*linux*' \
-            | head -10
-
-      # ============================================================
-      # 20. 查找 XHCI 模块
+      # 23. 检查最终 USB 模块
       # ============================================================
       - name: Verify USB kernel modules
         working-directory: immortalwrt
         run: |
           set -eux
 
-          echo "===== xhci-hcd.ko ====="
+          echo "========================================"
+          echo "xhci-hcd"
+          echo "========================================"
 
-          find bin/ \
-            build_dir/ \
+          find bin build_dir \
             -type f \
             -name 'xhci-hcd.ko*' \
-            -print
-
-          echo
-          echo "===== xhci-mtk-hcd.ko ====="
-
-          find bin/ \
-            build_dir/ \
-            -type f \
-            -name 'xhci-mtk-hcd.ko*' \
-            -print
-
-          echo
-          echo "===== nft socket ====="
-
-          find bin/ \
-            build_dir/ \
-            -type f \
-            -name 'nft_socket.ko*' \
-            -print
-
-          echo
-          echo "===== nft tproxy ====="
-
-          find bin/ \
-            build_dir/ \
-            -type f \
-            -name 'nft_tproxy.ko*' \
-            -print
-
-      # ============================================================
-      # 21. 检查 PassWall APK
-      # ============================================================
-      - name: Verify PassWall APK
-        working-directory: immortalwrt
-        run: |
-          set -eux
-
-          echo "========================================"
-          echo "PassWall APK"
-          echo "========================================"
-
-          find bin/packages \
-            -type f \
-            \( \
-              -name 'luci-app-passwall*.apk' \
-              -o -name 'luci-i18n-passwall*.apk' \
-            \) \
             -print \
             | sort
 
-          COUNT="$(find bin/packages \
+          echo
+          echo "========================================"
+          echo "xhci-mtk-hcd"
+          echo "========================================"
+
+          find bin build_dir \
             -type f \
-            -name 'luci-app-passwall*.apk' \
-            | wc -l)"
+            -name 'xhci-mtk-hcd.ko*' \
+            -print \
+            | sort
 
-          test "$COUNT" -ge 1
+          echo
+          echo "========================================"
+          echo "nft_socket"
+          echo "========================================"
 
-          echo "PassWall APK: PASS"
+          find bin build_dir \
+            -type f \
+            -name 'nft_socket.ko*' \
+            -print \
+            | sort
+
+          echo
+          echo "========================================"
+          echo "nft_tproxy"
+          echo "========================================"
+
+          find bin build_dir \
+            -type f \
+            -name 'nft_tproxy.ko*' \
+            -print \
+            | sort
 
       # ============================================================
-      # 22. 检查 USB / 4G / 5G APK
+      # 24. 检查固件 manifest
       # ============================================================
-      - name: Verify USB modem packages
+      - name: Verify firmware manifests
+        working-directory: immortalwrt
+        run: |
+          set -eux
+
+          MANIFESTS="$(
+            find bin/targets \
+              -type f \
+              -name '*.manifest' \
+              -print \
+              2>/dev/null \
+          )"
+
+          test -n "$MANIFESTS"
+
+          echo "========================================"
+          echo "PassWall in manifest"
+          echo "========================================"
+
+          if ! grep -Riq \
+              'luci-app-passwall' \
+              bin/targets; then
+            echo "ERROR: luci-app-passwall not found in firmware manifest"
+            exit 1
+          fi
+
+          echo "PassWall manifest: PASS"
+
+          echo
+          echo "========================================"
+          echo "MWAN3 in manifest"
+          echo "========================================"
+
+          if ! grep -Riq \
+              'luci-app-mwan3' \
+              bin/targets; then
+            echo "ERROR: luci-app-mwan3 not found in firmware manifest"
+            exit 1
+          fi
+
+          echo "MWAN3 manifest: PASS"
+
+          echo
+          echo "========================================"
+          echo "Samba4 in manifest"
+          echo "========================================"
+
+          if ! grep -Riq \
+              'luci-app-samba4' \
+              bin/targets; then
+            echo "ERROR: luci-app-samba4 not found in firmware manifest"
+            exit 1
+          fi
+
+          if ! grep -Riq \
+              'samba4-server' \
+              bin/targets; then
+            echo "ERROR: samba4-server not found in firmware manifest"
+            exit 1
+          fi
+
+          echo "Samba4 manifest: PASS"
+
+      # ============================================================
+      # 25. 检查 PassWall 关键依赖
+      # ============================================================
+      - name: Verify PassWall dependency packages
         working-directory: immortalwrt
         run: |
           set -eux
 
           echo "========================================"
-          echo "USB / modem packages"
+          echo "PassWall package outputs"
           echo "========================================"
 
           find bin/packages \
             -type f \
             -name '*.apk' \
             | grep -Ei \
-              'usb|qmi|mbim|ncm|rndis|serial|uqmi|umbim|modeswitch' \
+              'passwall|xray|sing-box|nft-socket|nft-tproxy|chinadns|dns2socks|tcping' \
             | sort \
-            | head -200 \
+            | head -300 \
             || true
 
       # ============================================================
-      # 23. 检查固件镜像
+      # 26. 检查 Samba4 包
       # ============================================================
-      - name: Verify N30 Pro firmware image
+      - name: Verify Samba4 packages
         working-directory: immortalwrt
         run: |
           set -eux
 
           echo "========================================"
-          echo "Firmware images"
+          echo "Samba4 package outputs"
+          echo "========================================"
+
+          find bin/packages \
+            -type f \
+            -name '*.apk' \
+            | grep -Ei \
+              'samba4|luci-app-samba4' \
+            | sort \
+            || true
+
+      # ============================================================
+      # 27. 检查 MWAN3 包
+      # ============================================================
+      - name: Verify MWAN3 packages
+        working-directory: immortalwrt
+        run: |
+          set -eux
+
+          echo "========================================"
+          echo "MWAN3 package outputs"
+          echo "========================================"
+
+          find bin/packages \
+            -type f \
+            -name '*.apk' \
+            | grep -Ei \
+              'mwan3|luci-app-mwan3' \
+            | sort \
+            || true
+
+      # ============================================================
+      # 28. 检查最终固件
+      # ============================================================
+      - name: Verify N30 Pro firmware
+        working-directory: immortalwrt
+        run: |
+          set -eux
+
+          echo "========================================"
+          echo "Firmware files"
           echo "========================================"
 
           find bin/targets/mediatek/filogic \
             -maxdepth 1 \
             -type f \
-            -print \
+            -printf '%f\t%s bytes\n' \
             | sort
 
           echo
-          echo "===== N30 Pro images ====="
+          echo "========================================"
+          echo "N30 Pro firmware"
+          echo "========================================"
 
-          find bin/targets/mediatek/filogic \
-            -type f \
-            \( \
-              -iname '*n30*' \
-              -o -iname '*netcore*' \
-            \) \
-            -print
+          N30_FILES="$(
+            find bin/targets/mediatek/filogic \
+              -maxdepth 1 \
+              -type f \
+              \( \
+                -iname '*n30*' \
+                -o -iname '*netcore*' \
+              \) \
+              -print
+          )"
 
-          test -n "$(find bin/targets/mediatek/filogic \
-            -type f \
-            \( -iname '*n30*' -o -iname '*netcore*' \) \
-            -print -quit)"
+          echo "$N30_FILES"
+
+          test -n "$N30_FILES"
 
       # ============================================================
-      # 24. 生成构建报告
+      # 29. 检查固件大小
+      # ============================================================
+      - name: Check firmware size
+        working-directory: immortalwrt
+        run: |
+          set -eux
+
+          echo "========================================"
+          echo "Firmware sizes"
+          echo "========================================"
+
+          find bin/targets/mediatek/filogic \
+            -maxdepth 1 \
+            -type f \
+            -printf '%f\t%s bytes\n' \
+            | sort
+
+      # ============================================================
+      # 30. 生成构建报告
       # ============================================================
       - name: Generate build report
         working-directory: immortalwrt
@@ -868,7 +1125,7 @@ jobs:
 
           {
             echo "========================================"
-            echo "ImmortalWrt N30 Pro Build Report"
+            echo "ImmortalWrt 25.12.2 N30 Pro Build Report"
             echo "========================================"
             echo
             echo "ImmortalWrt: ${IW_BRANCH}"
@@ -878,138 +1135,132 @@ jobs:
             echo "========================================"
             echo "Target"
             echo "========================================"
+
             grep '^CONFIG_TARGET_' .config
-            echo
-            echo "========================================"
-            echo "USB"
-            echo "========================================"
-            grep '^CONFIG_PACKAGE_.*usb' .config || true
+
             echo
             echo "========================================"
             echo "PassWall"
             echo "========================================"
+
             grep -E \
-              '^CONFIG_PACKAGE_(luci-app-passwall|kmod-nft|xray|sing-box|chinadns|dns2socks|tcping|geoview|v2ray)' \
+              '^CONFIG_PACKAGE_(luci-app-passwall|kmod-nft|nftables|ipt2socks|xray|sing-box|shadowsocks|shadowsocksr|simple-obfs|v2ray-plugin|geoview|haproxy|chinadns-ng|dns2socks|tcping)' \
               .config \
+              | sort \
               || true
+
             echo
             echo "========================================"
-            echo "Firmware files"
+            echo "MWAN3"
             echo "========================================"
+
+            grep -E \
+              '^CONFIG_PACKAGE_(mwan3|luci-app-mwan3)' \
+              .config \
+              || true
+
+            echo
+            echo "========================================"
+            echo "Samba4"
+            echo "========================================"
+
+            grep -E \
+              '^CONFIG_PACKAGE_(samba4|luci-app-samba4)' \
+              .config \
+              || true
+
+            echo
+            echo "========================================"
+            echo "USB"
+            echo "========================================"
+
+            grep '^CONFIG_PACKAGE_kmod-usb' .config \
+              | sort \
+              || true
+
+            echo
+            echo "========================================"
+            echo "Firmware"
+            echo "========================================"
+
             find bin/targets/mediatek/filogic \
               -maxdepth 1 \
               -type f \
-              -printf '%f\n' \
+              -printf '%f\t%s bytes\n' \
               | sort
-            echo
-            echo "========================================"
-            echo "PassWall APK"
-            echo "========================================"
-            find bin/packages \
-              -type f \
-              -name 'luci-app-passwall*.apk' \
-              -printf '%p\n' \
-              | sort
+
           } > "$GITHUB_WORKSPACE/build-report/build-report.txt"
 
           cat "$GITHUB_WORKSPACE/build-report/build-report.txt"
 
       # ============================================================
-      # 25. 整理最终产物
+      # 31. 整理最终产物
       # ============================================================
       - name: Collect artifacts
         run: |
           set -eux
 
-          mkdir -p "$GITHUB_WORKSPACE/artifacts/firmware"
-          mkdir -p "$GITHUB_WORKSPACE/artifacts/passwall"
-          mkdir -p "$GITHUB_WORKSPACE/artifacts/usb"
-          mkdir -p "$GITHUB_WORKSPACE/artifacts/report"
+          mkdir -p artifacts/firmware
+          mkdir -p artifacts/packages
+          mkdir -p artifacts/report
 
+          # --------------------------------------------------------
           # 固件
+          # --------------------------------------------------------
           find immortalwrt/bin/targets/mediatek/filogic \
+            -maxdepth 1 \
             -type f \
-            \( \
-              -iname '*n30*' \
-              -o -iname '*netcore*' \
-              -o -name '*.manifest' \
-              -o -name 'sha256sums' \
-            \) \
-            -exec cp -v {} \
-              "$GITHUB_WORKSPACE/artifacts/firmware/" \; \
-            || true
+            -exec cp -v {} artifacts/firmware/ \;
 
-          # PassWall
-          find immortalwrt/bin/packages \
-            -type f \
-            \( \
-              -name 'luci-app-passwall*.apk' \
-              -o -name 'luci-i18n-passwall*.apk' \
-            \) \
-            -exec cp -v {} \
-              "$GITHUB_WORKSPACE/artifacts/passwall/" \; \
-            || true
-
-          # USB / modem package
+          # --------------------------------------------------------
+          # 所有 APK
+          # --------------------------------------------------------
           find immortalwrt/bin/packages \
             -type f \
             -name '*.apk' \
-            | grep -Ei \
-              'usb|qmi|mbim|ncm|rndis|serial|uqmi|umbim|modeswitch' \
-            | while read -r f; do
-              cp -v "$f" \
-                "$GITHUB_WORKSPACE/artifacts/usb/" \
-                || true
-            done
+            -exec cp -v {} artifacts/packages/ \;
 
+          # --------------------------------------------------------
+          # 报告
+          # --------------------------------------------------------
           cp -v \
             build-report/build-report.txt \
-            "$GITHUB_WORKSPACE/artifacts/report/"
+            artifacts/report/
 
+          echo
           echo "========================================"
-          echo "Final artifacts"
+          echo "FINAL ARTIFACTS"
           echo "========================================"
 
-          find "$GITHUB_WORKSPACE/artifacts" \
+          find artifacts \
             -type f \
-            -printf '%p\n' \
+            -printf '%p\t%s bytes\n' \
             | sort
 
       # ============================================================
-      # 26. 上传固件
+      # 32. 上传固件
       # ============================================================
-      - name: Upload firmware artifact
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-25.12.2-Netcore-N30-Pro-Firmware
+          name: ImmortalWrt-25.12.2-Netcore-N30-Pro-FULL
           path: artifacts/firmware
           if-no-files-found: error
           retention-days: 30
 
       # ============================================================
-      # 27. 上传 PassWall
+      # 33. 上传 APK
       # ============================================================
-      - name: Upload PassWall packages
+      - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
-          name: PassWall-25.12-Netcore-N30-Pro
-          path: artifacts/passwall
+          name: N30-Pro-All-Build-Packages
+          path: artifacts/packages
           if-no-files-found: warn
           retention-days: 30
 
       # ============================================================
-      # 28. 上传 USB / 4G / 5G 包
-      # ============================================================
-      - name: Upload USB modem packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: USB-4G-5G-Modem-Packages
-          path: artifacts/usb
-          if-no-files-found: warn
-          retention-days: 30
-
-      # ============================================================
-      # 29. 上传报告
+      # 34. 上传构建报告
       # ============================================================
       - name: Upload build report
         uses: actions/upload-artifact@v4
