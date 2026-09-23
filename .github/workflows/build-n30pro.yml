@@ -7,7 +7,6 @@ on:
 env:
   IMMORTALWRT_TAG: v25.12.2
   PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
-  TERM: xterm
 
 
 jobs:
@@ -84,6 +83,7 @@ jobs:
         | head -1)
 
 
+
         if [ -z "$PATCH" ]; then
 
           echo "Patch missing"
@@ -123,9 +123,7 @@ jobs:
 
 
         {
-
           block=block $0 "\n"
-
         }
 
 
@@ -147,7 +145,7 @@ jobs:
 
 
 
-    - name: Prepare StarVPN package
+    - name: Prepare StarVPN
       run: |
 
         set -e
@@ -161,7 +159,7 @@ jobs:
 
         if [ -z "$IPK" ]; then
 
-          echo "StarVPN ipk missing"
+          echo "StarVPN missing"
 
           exit 1
 
@@ -227,16 +225,8 @@ jobs:
 
 
 
-        rm -rf immortalwrt/package/starvpn
-
-
-
         mkdir -p \
         immortalwrt/package/starvpn/files
-
-
-
-        test -d /tmp/starvpn/usr
 
 
 
@@ -291,19 +281,13 @@ jobs:
         test -f "$DTS"
 
 
-        grep -q \
-        "vbus-supply" \
-        "$DTS"
+        grep -q "vbus-supply" "$DTS"
 
 
-        grep -q \
-        "xhci" \
-        "$DTS"
+        grep -q "xhci" "$DTS"
 
 
-        grep -Eq \
-        "usb_phy|u2phy|u3phy" \
-        "$DTS"
+        grep -Eq "usb_phy|u2phy|u3phy" "$DTS"
 
 
 
@@ -335,13 +319,7 @@ jobs:
 
     - name: Generate config
       working-directory: immortalwrt
-      env:
-        TERM: xterm
-
       run: |
-
-        export TERM=xterm
-
 
         printf '%s\n' \
         'CONFIG_TARGET_mediatek=y' \
@@ -349,9 +327,7 @@ jobs:
         'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_netis_nx30v2=y' \
         'CONFIG_PACKAGE_luci=y' \
         'CONFIG_PACKAGE_luci-ssl=y' \
-        'CONFIG_PACKAGE_kmod-usb2=y' \
         'CONFIG_PACKAGE_kmod-usb3=y' \
-        'CONFIG_PACKAGE_kmod-usb-xhci-hcd=y' \
         'CONFIG_PACKAGE_kmod-usb-storage=y' \
         'CONFIG_PACKAGE_kmod-usb-storage-uas=y' \
         'CONFIG_PACKAGE_kmod-usb-net=y' \
@@ -377,11 +353,11 @@ jobs:
 
 
 
-        make olddefconfig
+        make defconfig
 
 
 
-    - name: Download sources
+    - name: Download packages
       working-directory: immortalwrt
       run: |
 
@@ -400,7 +376,7 @@ jobs:
 
 
 
-    - name: Firmware check
+    - name: Check firmware
       working-directory: immortalwrt
       run: |
 
