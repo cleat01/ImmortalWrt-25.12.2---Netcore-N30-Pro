@@ -1,4 +1,4 @@
-name: Build ImmortalWrt 25.12.2 Netcore N30 Pro USB Fix
+name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Final
 
 on:
   workflow_dispatch:
@@ -25,6 +25,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+
           sudo apt update
 
           sudo apt install -y \
@@ -76,33 +77,35 @@ jobs:
 
 
           if [ -z "$PATCH" ]; then
-              echo "Patch not found"
-              exit 1
+            echo "Patch not found"
+            exit 1
           fi
 
 
-          echo "$PATCH"
-
-
           awk '
+
           BEGIN{
-            skip=0
+          skip=0
           }
 
           /^diff --git/ {
-              if ($0 ~ /11_fix_wifi_mac/) {
-                  skip=1
-              } else {
-                  skip=0
-              }
+
+          if ($0 ~ /11_fix_wifi_mac/) {
+              skip=1
+          }
+          else {
+              skip=0
+          }
+
           }
 
           skip==0 {
-              print
+          print
           }
 
-          ' "$PATCH" \
-          > /tmp/n30pro-compatible.patch
+          ' \
+          "$PATCH" \
+          > /tmp/n30pro.patch
 
 
 
@@ -113,11 +116,11 @@ jobs:
           patch \
           -p1 \
           --forward \
-          < /tmp/n30pro-compatible.patch
+          < /tmp/n30pro.patch
 
 
 
-      - name: Verify N30 Pro DTS
+      - name: Verify N30 Pro DTS USB
         working-directory: immortalwrt
         run: |
 
@@ -125,19 +128,103 @@ jobs:
           target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
 
 
-          grep -R \
-          "vbus-supply\|usb-vbus\|regulator" \
+          grep -q \
+          "vbus-supply" \
+          target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+
+
+          grep -q \
+          "xhci" \
+          target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+
+
+          grep -q \
+          "regulator" \
           target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
 
 
 
-      - name: Verify device
+      - name: Verify device target
         working-directory: immortalwrt
         run: |
 
           grep -q \
           "Device/netis_nx30v2" \
           target/linux/mediatek/image/filogic.mk
+
+
+
+      - name: Prepare StarVPN package
+        run: |
+
+          mkdir -p \
+          immortalwrt/package/starvpn/starvpn/files
+
+
+          if [ -f packages/starvpn_6.1.0_aarch64_cortex-a53.ipk ]; then
+
+
+            mkdir -p /tmp/starvpn
+
+            cd /tmp/starvpn
+
+
+            ar x \
+            ${GITHUB_WORKSPACE}/packages/starvpn_6.1.0_aarch64_cortex-a53.ipk
+
+
+            tar xf data.tar.gz
+
+
+            cp -a \
+            usr \
+            etc \
+            ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/starvpn/files/ || true
+
+
+          fi
+
+
+
+          printf '%s\n' \
+          'include $(TOPDIR)/rules.mk' \
+          '' \
+          'PKG_NAME:=starvpn' \
+          'PKG_VERSION:=6.1.0' \
+          'PKG_RELEASE:=1' \
+          '' \
+          'include $(INCLUDE_DIR)/package.mk' \
+          '' \
+          'define Package/starvpn' \
+          ' SECTION:=net' \
+          ' CATEGORY:=Network' \
+          ' TITLE:=StarVPN' \
+          ' DEPENDS:=+kmod-tun' \
+          'endef' \
+          '' \
+          'define Package/starvpn/install' \
+          ' $(CP) ./files/* $(1)/' \
+          'endef' \
+          '' \
+          '$(eval $(call BuildPackage,starvpn))' \
+          > immortalwrt/package/starvpn/starvpn/Makefile
+
+
+
+
+      - name: Install feeds
+        working-directory: immortalwrt
+        run: |
+
+          echo \
+          "src-link starvpn $(pwd)/package/starvpn" \
+          >> feeds.conf.default
+
+
+          ./scripts/feeds update -a
+
+
+          ./scripts/feeds install -a
 
 
 
@@ -169,6 +256,7 @@ jobs:
           'CONFIG_PACKAGE_luci-app-mwan3=y' \
           'CONFIG_PACKAGE_samba4-server=y' \
           'CONFIG_PACKAGE_luci-app-samba4=y' \
+          'CONFIG_PACKAGE_starvpn=y' \
           .config
 
 
@@ -180,7 +268,8 @@ jobs:
         working-directory: immortalwrt
         run: |
 
-          make download -j$(nproc)
+          make download \
+          -j$(nproc)
 
 
 
@@ -188,11 +277,13 @@ jobs:
         working-directory: immortalwrt
         run: |
 
-          make -j$(nproc) V=s
+          make \
+          -j$(nproc) \
+          V=s
 
 
 
-      - name: Audit firmware
+      - name: Firmware audit
         working-directory: immortalwrt
         run: |
 
@@ -200,6 +291,11 @@ jobs:
 
 
           test -d "$TARGET"
+
+
+          find "$TARGET" \
+          -type f \
+          | grep -q "netis"
 
 
           if find "$TARGET" \
