@@ -3,9 +3,11 @@ name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Final
 on:
   workflow_dispatch:
 
+
 env:
   IMMORTALWRT_TAG: v25.12.2
   PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
+  TERM: xterm
 
 
 jobs:
@@ -14,14 +16,18 @@ jobs:
 
     runs-on: ubuntu-24.04
 
+
     steps:
+
 
     - name: Checkout
       uses: actions/checkout@v5
 
 
+
     - name: Install dependencies
       run: |
+
         sudo apt update
 
         sudo apt install -y \
@@ -44,6 +50,7 @@ jobs:
           binutils
 
 
+
     - name: Clone ImmortalWrt
       run: |
 
@@ -54,6 +61,7 @@ jobs:
         immortalwrt
 
 
+
     - name: Clone N30 Pro patch
       run: |
 
@@ -61,6 +69,7 @@ jobs:
         --depth 1 \
         ${PATCH_REPO} \
         n30pro-patch
+
 
 
     - name: Apply N30 Pro patch
@@ -76,20 +85,24 @@ jobs:
 
 
         if [ -z "$PATCH" ]; then
+
           echo "Patch missing"
+
           exit 1
+
         fi
+
 
 
         awk '
 
-        BEGIN {
+        BEGIN{
           block=""
           skip=0
         }
 
 
-        /^diff --git/ {
+        /^diff --git/{
 
           if(block!="" && skip==0)
             print block
@@ -105,15 +118,18 @@ jobs:
 
 
           next
+
         }
 
 
         {
+
           block=block $0 "\n"
+
         }
 
 
-        END {
+        END{
 
           if(block!="" && skip==0)
             print block
@@ -142,10 +158,15 @@ jobs:
         | head -1)
 
 
+
         if [ -z "$IPK" ]; then
+
           echo "StarVPN ipk missing"
+
           exit 1
+
         fi
+
 
 
         rm -rf /tmp/starvpn
@@ -153,11 +174,14 @@ jobs:
         mkdir -p /tmp/starvpn
 
 
+
         cp "$IPK" \
         /tmp/starvpn/starvpn.ipk
 
 
+
         cd /tmp/starvpn
+
 
 
         if file starvpn.ipk | grep -qi debian; then
@@ -191,7 +215,8 @@ jobs:
 
         else
 
-          echo "Unsupported ipk data format"
+          echo "Unsupported IPK"
+
           exit 1
 
         fi
@@ -201,7 +226,9 @@ jobs:
         cd ${GITHUB_WORKSPACE}
 
 
+
         rm -rf immortalwrt/package/starvpn
+
 
 
         mkdir -p \
@@ -209,12 +236,8 @@ jobs:
 
 
 
-        if [ ! -d /tmp/starvpn/usr ]; then
+        test -d /tmp/starvpn/usr
 
-          echo "StarVPN usr missing"
-          exit 1
-
-        fi
 
 
         cp -a \
@@ -312,7 +335,13 @@ jobs:
 
     - name: Generate config
       working-directory: immortalwrt
+      env:
+        TERM: xterm
+
       run: |
+
+        export TERM=xterm
+
 
         printf '%s\n' \
         'CONFIG_TARGET_mediatek=y' \
@@ -347,7 +376,17 @@ jobs:
         > .config
 
 
+
         make olddefconfig
+
+
+
+    - name: Download sources
+      working-directory: immortalwrt
+      run: |
+
+        make download \
+        -j$(nproc)
 
 
 
