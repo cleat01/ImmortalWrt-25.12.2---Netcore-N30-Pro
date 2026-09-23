@@ -3,9 +3,11 @@ name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Final
 on:
   workflow_dispatch:
 
+
 env:
   IMMORTALWRT_TAG: v25.12.2
   PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
+
 
 jobs:
 
@@ -13,14 +15,18 @@ jobs:
 
     runs-on: ubuntu-24.04
 
+
     steps:
+
 
       - name: Checkout repository
         uses: actions/checkout@v5
 
 
+
       - name: Install dependencies
         run: |
+
           sudo apt update
 
           sudo apt install -y \
@@ -41,23 +47,26 @@ jobs:
             patch
 
 
+
       - name: Clone ImmortalWrt
         run: |
 
           git clone \
-            --depth 1 \
-            --branch ${IMMORTALWRT_TAG} \
-            https://github.com/immortalwrt/immortalwrt.git \
-            immortalwrt
+          --depth 1 \
+          --branch ${IMMORTALWRT_TAG} \
+          https://github.com/immortalwrt/immortalwrt.git \
+          immortalwrt
+
 
 
       - name: Clone N30 Pro patch
         run: |
 
           git clone \
-            --depth 1 \
-            ${PATCH_REPO} \
-            n30pro-patch
+          --depth 1 \
+          ${PATCH_REPO} \
+          n30pro-patch
+
 
 
       - name: Apply N30 Pro patch
@@ -65,6 +74,7 @@ jobs:
         run: |
 
           set -e
+
 
           PATCH=$(find ../n30pro-patch \
           -name "*.patch" \
@@ -74,15 +84,17 @@ jobs:
 
           if [ -z "$PATCH" ]; then
 
-            echo "N30 Pro patch not found"
+            echo "N30 Pro patch missing"
 
             exit 1
 
           fi
 
 
-          echo "Using patch:"
+
+          echo "Apply patch:"
           echo "$PATCH"
+
 
 
           if patch \
@@ -91,52 +103,54 @@ jobs:
           < "$PATCH"; then
 
 
-            patch \
-            -p1 \
-            < "$PATCH"
+              patch \
+              -p1 \
+              < "$PATCH"
 
 
           else
 
 
-            echo "Fallback: remove wifi mac patch"
+              echo "Use wifi mac filtered patch"
 
 
-            awk '
+              awk '
 
-            BEGIN {
-              skip=0
-            }
-
-
-            /^diff --git/ {
-
-              if ($0 ~ /11_fix_wifi_mac/) {
-                skip=1
-              } else {
-                skip=0
+              BEGIN {
+                  skip=0
               }
 
-            }
+
+              /^diff --git/ {
+
+                  if ($0 ~ /11_fix_wifi_mac/) {
+                      skip=1
+                  } else {
+                      skip=0
+                  }
+
+              }
 
 
-            skip==0 {
-              print
-            }
+              skip==0 {
+                  print
+              }
 
-            ' "$PATCH" \
-            > /tmp/n30pro.patch
+              ' "$PATCH" \
+              > /tmp/n30pro.patch
 
 
-            patch \
-            -p1 \
-            < /tmp/n30pro.patch
+
+              patch \
+              -p1 \
+              < /tmp/n30pro.patch
 
 
           fi
 
 
-      - name: Verify N30 Pro DTS USB
+
+      - name: Verify N30 Pro DTS
         working-directory: immortalwrt
         run: |
 
@@ -161,7 +175,8 @@ jobs:
           "$DTS"
 
 
-      - name: Verify target device
+
+      - name: Verify device
         working-directory: immortalwrt
         run: |
 
@@ -170,59 +185,80 @@ jobs:
           target/linux/mediatek/image/filogic.mk
 
 
+
       - name: Prepare StarVPN package
         run: |
 
-          IPK=$(find packages \
+          IPK=$(find . \
           -name "starvpn*.ipk" \
           | head -1)
+
 
 
           if [ -z "$IPK" ]; then
 
             echo "StarVPN ipk missing"
 
+            echo "Please upload starvpn ipk into repository"
+
             exit 1
 
           fi
+
+
+
+          echo "Using StarVPN:"
+          echo "$IPK"
+
 
 
           mkdir -p \
           immortalwrt/package/starvpn/files
 
 
+
           mkdir -p /tmp/starvpn
 
 
+
           cd /tmp/starvpn
+
 
 
           ar x \
           "${GITHUB_WORKSPACE}/${IPK}"
 
 
+
           if [ -f data.tar.gz ]; then
 
-            tar xf data.tar.gz
+
+              tar xf data.tar.gz
 
 
           elif [ -f data.tar.zst ]; then
 
-            tar \
-            --use-compress-program=unzstd \
-            -xf data.tar.zst
+
+              tar \
+              --use-compress-program=unzstd \
+              -xf data.tar.zst
 
 
           else
 
-            echo "Unsupported ipk compression"
 
-            exit 1
+              echo "Unsupported ipk compression"
+
+
+              exit 1
+
 
           fi
 
 
+
           test -d usr
+
 
 
           cp -a \
@@ -230,16 +266,21 @@ jobs:
           ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/files/
 
 
+
           if [ -d etc ]; then
 
-            cp -a \
-            etc/. \
-            ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/files/
+
+              cp -a \
+              etc/. \
+              ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/files/
+
 
           fi
 
 
+
           cd ${GITHUB_WORKSPACE}
+
 
 
           printf '%s\n' \
@@ -266,6 +307,7 @@ jobs:
           > immortalwrt/package/starvpn/Makefile
 
 
+
       - name: Update feeds
         working-directory: immortalwrt
         run: |
@@ -281,7 +323,8 @@ jobs:
           ./scripts/feeds install -a
 
 
-      - name: Generate configuration
+
+      - name: Generate config
         working-directory: immortalwrt
         run: |
 
@@ -316,7 +359,8 @@ jobs:
           make defconfig
 
 
-      - name: Verify configuration
+
+      - name: Verify config
         working-directory: immortalwrt
         run: |
 
@@ -330,14 +374,6 @@ jobs:
           .config
 
 
-      - name: Compile StarVPN package
-        working-directory: immortalwrt
-        run: |
-
-          make \
-          package/starvpn/compile \
-          V=s
-
 
       - name: Download packages
         working-directory: immortalwrt
@@ -347,6 +383,7 @@ jobs:
           -j$(nproc)
 
 
+
       - name: Build firmware
         working-directory: immortalwrt
         run: |
@@ -354,6 +391,7 @@ jobs:
           make \
           -j$(nproc) \
           V=s
+
 
 
       - name: Firmware audit
@@ -371,16 +409,21 @@ jobs:
           | grep -q "sysupgrade"
 
 
+
           if find "$TARGET" \
           -iname "*h3c*" \
           -o \
           -iname "*n60*"; then
 
-            echo "Wrong firmware detected"
 
-            exit 1
+              echo "Wrong firmware"
+
+
+              exit 1
+
 
           fi
+
 
 
       - name: Upload firmware
