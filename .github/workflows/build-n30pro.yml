@@ -1,4 +1,4 @@
-name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Final
+name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Debug Final
 
 on:
   workflow_dispatch:
@@ -83,10 +83,9 @@ jobs:
         | head -1)
 
 
-
         if [ -z "$PATCH" ]; then
 
-          echo "Patch missing"
+          echo "No patch found"
 
           exit 1
 
@@ -145,7 +144,7 @@ jobs:
 
 
 
-    - name: Prepare StarVPN
+    - name: Prepare StarVPN package
       run: |
 
         set -e
@@ -159,7 +158,7 @@ jobs:
 
         if [ -z "$IPK" ]; then
 
-          echo "StarVPN missing"
+          echo "StarVPN ipk missing"
 
           exit 1
 
@@ -182,15 +181,7 @@ jobs:
 
 
 
-        if file starvpn.ipk | grep -qi debian; then
-
-          ar x starvpn.ipk
-
-        else
-
-          tar xf starvpn.ipk
-
-        fi
+        ar x starvpn.ipk
 
 
 
@@ -213,7 +204,7 @@ jobs:
 
         else
 
-          echo "Unsupported IPK"
+          echo "Unknown ipk format"
 
           exit 1
 
@@ -225,6 +216,10 @@ jobs:
 
 
 
+        rm -rf immortalwrt/package/starvpn
+
+
+
         mkdir -p \
         immortalwrt/package/starvpn/files
 
@@ -232,17 +227,15 @@ jobs:
 
         cp -a \
         /tmp/starvpn/usr \
-        immortalwrt/package/starvpn/files/
+        immortalwrt/package/starvpn/files/ \
+        || true
 
 
 
-        if [ -d /tmp/starvpn/etc ]; then
-
-          cp -a \
-          /tmp/starvpn/etc \
-          immortalwrt/package/starvpn/files/
-
-        fi
+        cp -a \
+        /tmp/starvpn/etc \
+        immortalwrt/package/starvpn/files/ \
+        || true
 
 
 
@@ -259,7 +252,7 @@ jobs:
         ' SECTION:=net' \
         ' CATEGORY:=Network' \
         ' TITLE:=StarVPN' \
-        ' DEPENDS:=+kmod-tun' \
+        ' DEPENDS:=+kmod-tun +libstdcpp +libopenssl' \
         'endef' \
         '' \
         'define Package/starvpn/install' \
@@ -285,9 +278,6 @@ jobs:
 
 
         grep -q "xhci" "$DTS"
-
-
-        grep -Eq "usb_phy|u2phy|u3phy" "$DTS"
 
 
 
@@ -357,12 +347,27 @@ jobs:
 
 
 
+    - name: Verify final config
+      working-directory: immortalwrt
+      run: |
+
+        echo "===== CONFIG CHECK ====="
+
+
+        grep CONFIG_PACKAGE_starvpn .config || true
+
+        grep CONFIG_PACKAGE_kmod-usb-serial .config || true
+
+        grep CONFIG_PACKAGE_kmod-usb-net-qmi-wwan .config || true
+
+
+
     - name: Download packages
       working-directory: immortalwrt
       run: |
 
         make download \
-        -j$(nproc)
+        -j2
 
 
 
@@ -371,12 +376,54 @@ jobs:
       run: |
 
         make \
-        -j$(nproc) \
-        V=s
+        -j1 \
+        V=s 2>&1 | tee build.log
 
 
 
-    - name: Check firmware
+        RESULT=${PIPESTATUS[0]}
+
+
+
+        if [ "$RESULT" != "0" ]; then
+
+
+          echo "========== BUILD FAILED =========="
+
+
+          echo "===== ERROR ====="
+
+
+          grep -n "error:" build.log | tail -50 || true
+
+
+          grep -n "Error [0-9]" build.log | tail -50 || true
+
+
+          tail -200 build.log
+
+
+          exit "$RESULT"
+
+
+        fi
+
+
+
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v4
+
+      with:
+
+        name: build-log
+
+        path: immortalwrt/build.log
+
+
+
+    - name: Firmware check
+      if: success()
       working-directory: immortalwrt
       run: |
 
@@ -388,6 +435,7 @@ jobs:
 
 
     - name: Upload firmware
+      if: success()
       uses: actions/upload-artifact@v4
 
       with:
