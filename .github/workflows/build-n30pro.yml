@@ -14,13 +14,17 @@ jobs:
 
     steps:
 
+
     - name: Checkout source
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
+
 
 
     - name: Install dependencies
       run: |
+
         sudo apt update
+
 
         sudo apt install -y \
           build-essential \
@@ -33,12 +37,14 @@ jobs:
           libncurses-dev \
           libssl-dev \
           python3 \
-          python3-distutils \
+          python3-setuptools \
           rsync \
           unzip \
           zstd \
           file \
-          wget
+          wget \
+          curl
+
 
 
     - name: Clone ImmortalWrt 25.12.2
@@ -52,7 +58,7 @@ jobs:
 
 
 
-    - name: Prepare feeds
+    - name: Update feeds
       working-directory: immortalwrt
       run: |
 
@@ -70,7 +76,7 @@ jobs:
 
 
 
-    - name: Add N30 Pro packages
+    - name: Add N30 Pro configuration
       working-directory: immortalwrt
       run: |
 
@@ -115,7 +121,7 @@ jobs:
 
 
 
-    - name: Normalize config
+    - name: Normalize configuration
       working-directory: immortalwrt
       run: |
 
@@ -123,23 +129,28 @@ jobs:
 
 
 
-    - name: Verify target configuration
+    - name: Verify configuration
       working-directory: immortalwrt
       run: |
 
         echo "===== TARGET ====="
 
-        grep "netis" .config || true
+        grep netis .config || true
 
 
         echo "===== USB ====="
 
-        grep "usb" .config || true
+        grep kmod-usb .config || true
+
+
+        echo "===== MODEM ====="
+
+        grep qmi .config || true
 
 
         echo "===== TUN ====="
 
-        grep "kmod-tun" .config || true
+        grep kmod-tun .config || true
 
 
 
@@ -151,7 +162,7 @@ jobs:
 
 
 
-    - name: Compile firmware
+    - name: Build firmware
       working-directory: immortalwrt
       run: |
 
@@ -161,16 +172,16 @@ jobs:
         make -j1 V=s 2>&1 | tee build.log
 
 
-        BUILD_RESULT=${PIPESTATUS[0]}
+        RESULT=${PIPESTATUS[0]}
 
 
-        if [ "$BUILD_RESULT" != "0" ]; then
+        if [ "$RESULT" != "0" ]; then
 
           echo "========== BUILD FAILED =========="
 
           tail -300 build.log
 
-          exit "$BUILD_RESULT"
+          exit "$RESULT"
 
         fi
 
@@ -178,7 +189,7 @@ jobs:
 
     - name: Upload build log
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
 
       with:
 
@@ -186,24 +197,32 @@ jobs:
 
         path: immortalwrt/build.log
 
+        if-no-files-found: ignore
 
 
-    - name: Check firmware output
+
+    - name: Check firmware
+      if: success()
       working-directory: immortalwrt
       run: |
 
-        echo "Searching firmware..."
+        echo "===== Firmware ====="
+
 
         find \
         bin/targets/mediatek/filogic \
         -type f \
-        \( -name "*sysupgrade*" -o -name "*factory*" \)
+        \( \
+        -name "*sysupgrade*" \
+        -o \
+        -name "*factory*" \
+        \)
 
 
 
     - name: Upload firmware
       if: success()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
 
       with:
 
