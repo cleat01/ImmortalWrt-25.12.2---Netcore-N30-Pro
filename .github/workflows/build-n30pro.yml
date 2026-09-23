@@ -5,11 +5,6 @@ on:
   workflow_dispatch:
 
 
-env:
-  IMMORTALWRT_TAG: v25.12.2
-  PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
-
-
 jobs:
 
   build:
@@ -19,15 +14,12 @@ jobs:
 
     steps:
 
-
-    - name: Checkout
+    - name: Checkout source
       uses: actions/checkout@v4
-
 
 
     - name: Install dependencies
       run: |
-
         sudo apt update
 
         sudo apt install -y \
@@ -41,77 +33,44 @@ jobs:
           libncurses-dev \
           libssl-dev \
           python3 \
+          python3-distutils \
           rsync \
           unzip \
           zstd \
           file \
-          patch
+          wget
 
 
-
-    - name: Clone ImmortalWrt
+    - name: Clone ImmortalWrt 25.12.2
       run: |
 
         git clone \
-          --depth 1 \
-          --branch ${IMMORTALWRT_TAG} \
-          https://github.com/immortalwrt/immortalwrt.git
+          --depth=1 \
+          --branch v25.12.2 \
+          https://github.com/immortalwrt/immortalwrt.git \
+          immortalwrt
 
 
 
-    - name: Clone N30 patch
-      run: |
-
-        git clone \
-          --depth 1 \
-          ${PATCH_REPO} \
-          n30pro-patch
-
-
-
-    - name: Prepare patch
-      run: |
-
-        PATCH=$(find n30pro-patch -name "*.patch" | head -1)
-
-        if [ -z "$PATCH" ]; then
-
-          echo "No patch found"
-
-          exit 1
-
-        fi
-
-
-        grep -v "11_fix_wifi_mac" \
-        "$PATCH" \
-        > /tmp/n30pro.patch
-
-
-
-    - name: Apply patch
+    - name: Prepare feeds
       working-directory: immortalwrt
       run: |
 
-        patch -p1 --forward < /tmp/n30pro.patch
+        ./scripts/feeds update -a
+
+        ./scripts/feeds install -a
 
 
 
-    - name: Verify device
+    - name: Generate base config
       working-directory: immortalwrt
       run: |
 
-        test -f \
-        target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
-
-
-        grep -q \
-        "Device/netis_nx30v2" \
-        target/linux/mediatek/image/filogic.mk
+        make defconfig
 
 
 
-    - name: Generate config
+    - name: Add N30 Pro packages
       working-directory: immortalwrt
       run: |
 
@@ -137,6 +96,7 @@ jobs:
         'CONFIG_PACKAGE_kmod-usb-wdm=y' \
         '' \
         'CONFIG_PACKAGE_usb-modeswitch=y' \
+        'CONFIG_PACKAGE_usb-modeswitch-data=y' \
         'CONFIG_PACKAGE_uqmi=y' \
         'CONFIG_PACKAGE_umbim=y' \
         '' \
@@ -144,17 +104,42 @@ jobs:
         'CONFIG_PACKAGE_luci-app-mwan3=y' \
         '' \
         'CONFIG_PACKAGE_samba4-server=y' \
-        'CONFIG_PACKAGE_luci-app-samba4=y' \
         '' \
         'CONFIG_PACKAGE_kmod-tun=y' \
+        '' \
         'CONFIG_PACKAGE_curl=y' \
         'CONFIG_PACKAGE_wget-ssl=y' \
         'CONFIG_PACKAGE_ca-bundle=y' \
         'CONFIG_PACKAGE_ca-certificates=y' \
-        > .config
+        >> .config
 
 
-        make olddefconfig
+
+    - name: Normalize config
+      working-directory: immortalwrt
+      run: |
+
+        make defconfig
+
+
+
+    - name: Verify target configuration
+      working-directory: immortalwrt
+      run: |
+
+        echo "===== TARGET ====="
+
+        grep "netis" .config || true
+
+
+        echo "===== USB ====="
+
+        grep "usb" .config || true
+
+
+        echo "===== TUN ====="
+
+        grep "kmod-tun" .config || true
 
 
 
@@ -176,30 +161,43 @@ jobs:
         make -j1 V=s 2>&1 | tee build.log
 
 
-        exit ${PIPESTATUS[0]}
+        BUILD_RESULT=${PIPESTATUS[0]}
+
+
+        if [ "$BUILD_RESULT" != "0" ]; then
+
+          echo "========== BUILD FAILED =========="
+
+          tail -300 build.log
+
+          exit "$BUILD_RESULT"
+
+        fi
 
 
 
-    - name: Upload log
+    - name: Upload build log
       if: always()
       uses: actions/upload-artifact@v4
 
       with:
 
-        name: build-log
+        name: immortalwrt-build-log
 
         path: immortalwrt/build.log
 
 
 
-    - name: Check firmware
-      if: success()
+    - name: Check firmware output
       working-directory: immortalwrt
       run: |
 
+        echo "Searching firmware..."
+
         find \
         bin/targets/mediatek/filogic \
-        -name "*sysupgrade*"
+        -type f \
+        \( -name "*sysupgrade*" -o -name "*factory*" \)
 
 
 
@@ -209,6 +207,6 @@ jobs:
 
       with:
 
-        name: N30-Pro-ImmortalWrt-25.12.2
+        name: ImmortalWrt-25.12.2-Netcore-N30-Pro
 
         path: immortalwrt/bin/targets/mediatek/filogic/
