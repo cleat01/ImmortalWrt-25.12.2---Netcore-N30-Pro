@@ -5,18 +5,25 @@ on:
 
 env:
   IMMORTALWRT_TAG: v25.12.2
+  PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
 
 jobs:
+
   build:
+
     runs-on: ubuntu-24.04
 
+
     steps:
+
       - name: Checkout
         uses: actions/checkout@v5
+
 
       - name: Install dependencies
         run: |
           sudo apt update
+
           sudo apt install -y \
             build-essential \
             clang \
@@ -32,170 +39,156 @@ jobs:
             unzip \
             zstd \
             file \
-            binutils \
             patch
+
 
       - name: Clone ImmortalWrt
         run: |
+
           git clone \
             --depth 1 \
-            --branch "${IMMORTALWRT_TAG}" \
+            --branch ${IMMORTALWRT_TAG} \
             https://github.com/immortalwrt/immortalwrt.git \
             immortalwrt
 
-      - name: Verify N30 Pro device
-        working-directory: immortalwrt
+
+
+      - name: Clone N30 Pro adaptation patch
         run: |
-          grep -q "Device/netis_nx30v2" \
-          target/linux/mediatek/image/filogic.mk
+
+          git clone \
+            --depth 1 \
+            ${PATCH_REPO} \
+            n30pro-patch
+
+
 
       - name: Apply N30 Pro patch
         working-directory: immortalwrt
         run: |
-          if [ -d "${GITHUB_WORKSPACE}/patches" ]; then
-            for p in "${GITHUB_WORKSPACE}"/patches/*.patch; do
-              [ -f "$p" ] || continue
-              patch -p1 < "$p"
-            done
-          else
-            echo "No patches directory found"
-            exit 1
-          fi
 
-      - name: Verify patched DTS
+          bash \
+          ../n30pro-patch/scripts/apply-netcore-n30pro.sh \
+          ../n30pro-patch
+
+
+
+      - name: Verify N30 Pro target
         working-directory: immortalwrt
         run: |
-          DTS=$(awk '
-          /define Device\/netis_nx30v2/ {found=1}
-          found && /DEVICE_DTS/ {print $3;exit}
-          ' target/linux/mediatek/image/filogic.mk)
 
-          test -n "$DTS"
+          grep -R \
+          "netcore,n30-pro\|netis,nx30v2" \
+          target/linux/mediatek \
+          || true
 
-          DTS_FILE=$(find target/linux/mediatek -name "${DTS}.dts" | head -n1)
 
-          test -f "$DTS_FILE"
 
-          grep -q "xhci" "$DTS_FILE"
-
-      - name: Prepare StarVPN package
+      - name: Add StarVPN package
         run: |
-          mkdir -p immortalwrt/package/starvpn/starvpn/files
 
-          if [ -f packages/starvpn_6.1.0_aarch64_cortex-a53.ipk ]; then
+          if [ -d package/starvpn ]; then
 
-            mkdir -p /tmp/starvpn
+            mkdir -p \
+            immortalwrt/package/starvpn
 
-            cd /tmp/starvpn
-
-            ar x \
-            "${GITHUB_WORKSPACE}/packages/starvpn_6.1.0_aarch64_cortex-a53.ipk"
-
-            tar xf data.tar.gz
-
-            cd "${GITHUB_WORKSPACE}"
-
-            cp -a /tmp/starvpn/. \
-            immortalwrt/package/starvpn/starvpn/files/
+            cp -a \
+            package/starvpn/. \
+            immortalwrt/package/starvpn/
 
           fi
 
-          mkdir -p immortalwrt/package/starvpn/starvpn
 
-          printf '%s\n' \
-          'include $(TOPDIR)/rules.mk' \
-          'PKG_NAME:=starvpn' \
-          'PKG_VERSION:=6.1.0' \
-          'PKG_RELEASE:=1' \
-          'include $(INCLUDE_DIR)/package.mk' \
-          '' \
-          'define Package/starvpn' \
-          '  SECTION:=net' \
-          '  CATEGORY:=Network' \
-          '  TITLE:=StarVPN' \
-          '  DEPENDS:=+kmod-tun' \
-          'endef' \
-          '' \
-          'define Package/starvpn/install' \
-          '	$(CP) ./files/* $(1)/' \
-          'endef' \
-          '' \
-          '$(eval $(call BuildPackage,starvpn))' \
-          > immortalwrt/package/starvpn/starvpn/Makefile
 
-      - name: Configure feeds
+      - name: Update feeds
         working-directory: immortalwrt
         run: |
-          echo "src-link starvpn $(pwd)/package/starvpn" >> feeds.conf.default
+
+          echo \
+          "src-link starvpn $(pwd)/package/starvpn" \
+          >> feeds.conf.default
+
 
           ./scripts/feeds update -a
-          ./scripts/feeds install -a
-          ./scripts/feeds install starvpn
 
-      - name: Generate config
+          ./scripts/feeds install -a
+
+
+
+      - name: Load configuration
         working-directory: immortalwrt
         run: |
-          cat > .config <<'EOF'
-CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_filogic=y
-CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_netis_nx30v2=y
 
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-ssl=y
+          cp \
+          ../configs/n30pro.config \
+          .config
 
-CONFIG_PACKAGE_kmod-usb3=y
-CONFIG_PACKAGE_kmod-usb-storage=y
-CONFIG_PACKAGE_kmod-usb-storage-uas=y
-CONFIG_PACKAGE_block-mount=y
-
-CONFIG_PACKAGE_kmod-usb-net=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
-CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
-
-CONFIG_PACKAGE_kmod-usb-serial=y
-CONFIG_PACKAGE_kmod-usb-serial-option=y
-CONFIG_PACKAGE_kmod-usb-wdm=y
-
-CONFIG_PACKAGE_usb-modeswitch=y
-CONFIG_PACKAGE_uqmi=y
-CONFIG_PACKAGE_umbim=y
-
-CONFIG_PACKAGE_mwan3=y
-CONFIG_PACKAGE_luci-app-mwan3=y
-
-CONFIG_PACKAGE_samba4-server=y
-CONFIG_PACKAGE_luci-app-samba4=y
-
-CONFIG_PACKAGE_kmod-tun=y
-CONFIG_PACKAGE_starvpn=y
-EOF
 
           make defconfig
+
+
+
+      - name: Verify target configuration
+        working-directory: immortalwrt
+        run: |
+
+          grep \
+          CONFIG_TARGET_mediatek=y \
+          .config
+
+
+          grep \
+          CONFIG_TARGET_mediatek_filogic=y \
+          .config
+
+
+
+      - name: Download packages
+        working-directory: immortalwrt
+        run: |
+
+          make download \
+          -j$(nproc)
+
+
 
       - name: Build firmware
         working-directory: immortalwrt
         run: |
-          make download -j$(nproc)
-          make -j$(nproc) V=s
 
-      - name: Audit firmware
+          make \
+          -j$(nproc) \
+          V=s
+
+
+
+      - name: Firmware check
         working-directory: immortalwrt
         run: |
+
           TARGET="bin/targets/mediatek/filogic"
 
-          test -d "$TARGET"
 
-          if grep -Rqi "h3c" "$TARGET"; then
-            exit 1
+          test -d ${TARGET}
+
+
+          if find ${TARGET} \
+          -iname "*h3c*" \
+          -o -iname "*n60*"; then
+
+              echo "Wrong device firmware detected"
+
+              exit 1
+
           fi
 
-          if grep -Rqi "n60" "$TARGET"; then
-            exit 1
-          fi
+
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
+
         with:
+
           name: ImmortalWrt-25.12.2-Netcore-N30-Pro
+
           path: immortalwrt/bin/targets/mediatek/filogic/
