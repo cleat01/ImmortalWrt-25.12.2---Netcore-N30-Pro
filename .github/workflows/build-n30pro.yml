@@ -82,9 +82,10 @@ jobs:
           | head -1)
 
 
+
           if [ -z "$PATCH" ]; then
 
-            echo "N30 Pro patch missing"
+            echo "N30 Pro patch not found"
 
             exit 1
 
@@ -92,8 +93,7 @@ jobs:
 
 
 
-          echo "Apply patch:"
-          echo "$PATCH"
+          echo "Testing patch"
 
 
 
@@ -111,30 +111,32 @@ jobs:
           else
 
 
-              echo "Use wifi mac filtered patch"
+              echo "Fallback remove wifi mac patch"
 
 
               awk '
 
               BEGIN {
-                  skip=0
+                skip=0
               }
 
 
               /^diff --git/ {
 
-                  if ($0 ~ /11_fix_wifi_mac/) {
-                      skip=1
-                  } else {
-                      skip=0
-                  }
+                if ($0 ~ /11_fix_wifi_mac/) {
+                  skip=1
+                }
+                else {
+                  skip=0
+                }
 
               }
 
 
               skip==0 {
-                  print
+                print
               }
+
 
               ' "$PATCH" \
               > /tmp/n30pro.patch
@@ -150,6 +152,25 @@ jobs:
 
 
 
+      - name: Add StarVPN package
+        run: |
+
+          if [ ! -d package/starvpn ]; then
+
+            echo "Missing package/starvpn"
+
+            exit 1
+
+          fi
+
+
+
+          cp -a \
+          package/starvpn \
+          immortalwrt/package/
+
+
+
       - name: Verify N30 Pro DTS
         working-directory: immortalwrt
         run: |
@@ -157,7 +178,9 @@ jobs:
           DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
 
 
+
           test -f "$DTS"
+
 
 
           grep -q \
@@ -165,9 +188,11 @@ jobs:
           "$DTS"
 
 
+
           grep -q \
           "xhci" \
           "$DTS"
+
 
 
           grep -q \
@@ -176,135 +201,13 @@ jobs:
 
 
 
-      - name: Verify device
+      - name: Verify target device
         working-directory: immortalwrt
         run: |
 
           grep -q \
           "Device/netis_nx30v2" \
           target/linux/mediatek/image/filogic.mk
-
-
-
-      - name: Prepare StarVPN package
-        run: |
-
-          IPK=$(find . \
-          -name "starvpn*.ipk" \
-          | head -1)
-
-
-
-          if [ -z "$IPK" ]; then
-
-            echo "StarVPN ipk missing"
-
-            echo "Please upload starvpn ipk into repository"
-
-            exit 1
-
-          fi
-
-
-
-          echo "Using StarVPN:"
-          echo "$IPK"
-
-
-
-          mkdir -p \
-          immortalwrt/package/starvpn/files
-
-
-
-          mkdir -p /tmp/starvpn
-
-
-
-          cd /tmp/starvpn
-
-
-
-          ar x \
-          "${GITHUB_WORKSPACE}/${IPK}"
-
-
-
-          if [ -f data.tar.gz ]; then
-
-
-              tar xf data.tar.gz
-
-
-          elif [ -f data.tar.zst ]; then
-
-
-              tar \
-              --use-compress-program=unzstd \
-              -xf data.tar.zst
-
-
-          else
-
-
-              echo "Unsupported ipk compression"
-
-
-              exit 1
-
-
-          fi
-
-
-
-          test -d usr
-
-
-
-          cp -a \
-          usr/. \
-          ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/files/
-
-
-
-          if [ -d etc ]; then
-
-
-              cp -a \
-              etc/. \
-              ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/files/
-
-
-          fi
-
-
-
-          cd ${GITHUB_WORKSPACE}
-
-
-
-          printf '%s\n' \
-          'include $(TOPDIR)/rules.mk' \
-          '' \
-          'PKG_NAME:=starvpn' \
-          'PKG_VERSION:=6.1.0' \
-          'PKG_RELEASE:=1' \
-          '' \
-          'include $(INCLUDE_DIR)/package.mk' \
-          '' \
-          'define Package/starvpn' \
-          ' SECTION:=net' \
-          ' CATEGORY:=Network' \
-          ' TITLE:=StarVPN' \
-          ' DEPENDS:=+kmod-tun' \
-          'endef' \
-          '' \
-          'define Package/starvpn/install' \
-          ' $(CP) ./files/* $(1)/' \
-          'endef' \
-          '' \
-          '$(eval $(call BuildPackage,starvpn))' \
-          > immortalwrt/package/starvpn/Makefile
 
 
 
@@ -317,7 +220,9 @@ jobs:
           >> feeds.conf.default
 
 
+
           ./scripts/feeds update -a
+
 
 
           ./scripts/feeds install -a
@@ -356,11 +261,12 @@ jobs:
           > .config
 
 
+
           make defconfig
 
 
 
-      - name: Verify config
+      - name: Verify configuration
         working-directory: immortalwrt
         run: |
 
@@ -369,18 +275,29 @@ jobs:
           .config
 
 
+
           grep \
           "CONFIG_PACKAGE_starvpn=y" \
           .config
 
 
 
-      - name: Download packages
+      - name: Download sources
         working-directory: immortalwrt
         run: |
 
           make download \
           -j$(nproc)
+
+
+
+      - name: Compile StarVPN package
+        working-directory: immortalwrt
+        run: |
+
+          make \
+          package/starvpn/compile \
+          V=s
 
 
 
@@ -401,7 +318,9 @@ jobs:
           TARGET="bin/targets/mediatek/filogic"
 
 
+
           test -d "$TARGET"
+
 
 
           find "$TARGET" \
@@ -416,10 +335,9 @@ jobs:
           -iname "*n60*"; then
 
 
-              echo "Wrong firmware"
+            echo "Wrong firmware detected"
 
-
-              exit 1
+            exit 1
 
 
           fi
