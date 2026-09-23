@@ -3,11 +3,9 @@ name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Final
 on:
   workflow_dispatch:
 
-
 env:
   IMMORTALWRT_TAG: v25.12.2
   PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
-
 
 jobs:
 
@@ -15,13 +13,10 @@ jobs:
 
     runs-on: ubuntu-24.04
 
-
     steps:
 
-
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v5
-
 
 
       - name: Install dependencies
@@ -46,26 +41,23 @@ jobs:
             patch
 
 
-
       - name: Clone ImmortalWrt
         run: |
 
           git clone \
-          --depth 1 \
-          --branch ${IMMORTALWRT_TAG} \
-          https://github.com/immortalwrt/immortalwrt.git \
-          immortalwrt
-
+            --depth 1 \
+            --branch ${IMMORTALWRT_TAG} \
+            https://github.com/immortalwrt/immortalwrt.git \
+            immortalwrt
 
 
       - name: Clone N30 Pro patch
         run: |
 
           git clone \
-          --depth 1 \
-          ${PATCH_REPO} \
-          n30pro-patch
-
+            --depth 1 \
+            ${PATCH_REPO} \
+            n30pro-patch
 
 
       - name: Apply N30 Pro patch
@@ -74,80 +66,77 @@ jobs:
 
           set -e
 
-
           PATCH=$(find ../n30pro-patch \
           -name "*.patch" \
           | sort \
           | head -1)
 
 
-
           if [ -z "$PATCH" ]; then
 
-            echo "Patch missing"
+            echo "N30 Pro patch not found"
 
             exit 1
 
           fi
 
 
+          echo "Using patch:"
+          echo "$PATCH"
 
-          echo "Check patch"
 
           if patch \
-          -p1 \
           --dry-run \
+          -p1 \
           < "$PATCH"; then
 
 
-              patch \
-              -p1 \
-              < "$PATCH"
+            patch \
+            -p1 \
+            < "$PATCH"
 
 
           else
 
 
-              echo "Use filtered patch"
+            echo "Fallback: remove wifi mac patch"
 
 
+            awk '
 
-              awk '
+            BEGIN {
+              skip=0
+            }
 
-              BEGIN{s=0}
 
+            /^diff --git/ {
 
-              /^diff --git/ {
-
-              if($0 ~ /11_fix_wifi_mac/)
-              {
-                  s=1
-              }
-              else
-              {
-                  s=0
+              if ($0 ~ /11_fix_wifi_mac/) {
+                skip=1
+              } else {
+                skip=0
               }
 
-              }
+            }
 
 
-              s==0 {print}
+            skip==0 {
+              print
+            }
 
-              ' "$PATCH" \
-              > /tmp/n30pro.patch
+            ' "$PATCH" \
+            > /tmp/n30pro.patch
 
 
-
-              patch \
-              -p1 \
-              < /tmp/n30pro.patch
+            patch \
+            -p1 \
+            < /tmp/n30pro.patch
 
 
           fi
 
 
-
-      - name: Verify DTS
+      - name: Verify N30 Pro DTS USB
         working-directory: immortalwrt
         run: |
 
@@ -157,11 +146,9 @@ jobs:
           test -f "$DTS"
 
 
-
           grep -q \
           "vbus-supply" \
           "$DTS"
-
 
 
           grep -q \
@@ -169,21 +156,18 @@ jobs:
           "$DTS"
 
 
-
           grep -q \
           "regulator" \
           "$DTS"
 
 
-
-      - name: Verify target
+      - name: Verify target device
         working-directory: immortalwrt
         run: |
 
           grep -q \
           "Device/netis_nx30v2" \
           target/linux/mediatek/image/filogic.mk
-
 
 
       - name: Prepare StarVPN package
@@ -194,20 +178,17 @@ jobs:
           | head -1)
 
 
-
           if [ -z "$IPK" ]; then
 
-            echo "StarVPN package missing"
+            echo "StarVPN ipk missing"
 
             exit 1
 
           fi
 
 
-
           mkdir -p \
           immortalwrt/package/starvpn/files
-
 
 
           mkdir -p /tmp/starvpn
@@ -217,80 +198,72 @@ jobs:
 
 
           ar x \
-          ${GITHUB_WORKSPACE}/${IPK}
-
+          "${GITHUB_WORKSPACE}/${IPK}"
 
 
           if [ -f data.tar.gz ]; then
 
-              tar xf data.tar.gz
+            tar xf data.tar.gz
 
 
           elif [ -f data.tar.zst ]; then
 
-              tar \
-              --use-compress-program=unzstd \
-              -xf data.tar.zst
+            tar \
+            --use-compress-program=unzstd \
+            -xf data.tar.zst
 
 
           else
 
-              echo "Unknown ipk compression"
+            echo "Unsupported ipk compression"
 
-              exit 1
+            exit 1
 
           fi
-
 
 
           test -d usr
 
 
-
-          cp -a usr/* \
+          cp -a \
+          usr/. \
           ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/files/
-
 
 
           if [ -d etc ]; then
 
-              cp -a etc/* \
-              ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/files/
+            cp -a \
+            etc/. \
+            ${GITHUB_WORKSPACE}/immortalwrt/package/starvpn/files/
 
           fi
 
 
-
-          cat > immortalwrt/package/starvpn/Makefile <<'EOF'
-
-include $(TOPDIR)/rules.mk
+          cd ${GITHUB_WORKSPACE}
 
 
-PKG_NAME:=starvpn
-PKG_VERSION:=6.1.0
-PKG_RELEASE:=1
-
-
-include $(INCLUDE_DIR)/package.mk
-
-
-define Package/starvpn
- SECTION:=net
- CATEGORY:=Network
- TITLE:=StarVPN
- DEPENDS:=+kmod-tun
-endef
-
-
-define Package/starvpn/install
- $(CP) ./files/* $(1)/
-endef
-
-
-$(eval $(call BuildPackage,starvpn))
-
-EOF
-
+          printf '%s\n' \
+          'include $(TOPDIR)/rules.mk' \
+          '' \
+          'PKG_NAME:=starvpn' \
+          'PKG_VERSION:=6.1.0' \
+          'PKG_RELEASE:=1' \
+          '' \
+          'include $(INCLUDE_DIR)/package.mk' \
+          '' \
+          'define Package/starvpn' \
+          ' SECTION:=net' \
+          ' CATEGORY:=Network' \
+          ' TITLE:=StarVPN' \
+          ' DEPENDS:=+kmod-tun' \
+          'endef' \
+          '' \
+          'define Package/starvpn/install' \
+          ' $(CP) ./files/* $(1)/' \
+          'endef' \
+          '' \
+          '$(eval $(call BuildPackage,starvpn))' \
+          > immortalwrt/package/starvpn/Makefile
 
 
       - name: Update feeds
@@ -308,54 +281,65 @@ EOF
           ./scripts/feeds install -a
 
 
-
-      - name: Generate config
+      - name: Generate configuration
         working-directory: immortalwrt
         run: |
 
-          cat > .config <<'EOF'
-
-CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_filogic=y
-CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_netis_nx30v2=y
-
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-ssl=y
-
-CONFIG_PACKAGE_kmod-usb3=y
-CONFIG_PACKAGE_kmod-usb-storage=y
-CONFIG_PACKAGE_kmod-usb-storage-uas=y
-CONFIG_PACKAGE_block-mount=y
-
-CONFIG_PACKAGE_kmod-usb-net=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
-CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
-
-CONFIG_PACKAGE_kmod-usb-serial=y
-CONFIG_PACKAGE_kmod-usb-serial-option=y
-CONFIG_PACKAGE_kmod-usb-wdm=y
-
-CONFIG_PACKAGE_usb-modeswitch=y
-CONFIG_PACKAGE_uqmi=y
-CONFIG_PACKAGE_umbim=y
-
-CONFIG_PACKAGE_mwan3=y
-CONFIG_PACKAGE_luci-app-mwan3=y
-
-CONFIG_PACKAGE_samba4-server=y
-CONFIG_PACKAGE_luci-app-samba4=y
-
-CONFIG_PACKAGE_starvpn=y
-
-EOF
+          printf '%s\n' \
+          'CONFIG_TARGET_mediatek=y' \
+          'CONFIG_TARGET_mediatek_filogic=y' \
+          'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_netis_nx30v2=y' \
+          'CONFIG_PACKAGE_luci=y' \
+          'CONFIG_PACKAGE_luci-ssl=y' \
+          'CONFIG_PACKAGE_kmod-usb3=y' \
+          'CONFIG_PACKAGE_kmod-usb-storage=y' \
+          'CONFIG_PACKAGE_kmod-usb-storage-uas=y' \
+          'CONFIG_PACKAGE_block-mount=y' \
+          'CONFIG_PACKAGE_kmod-usb-net=y' \
+          'CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' \
+          'CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y' \
+          'CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y' \
+          'CONFIG_PACKAGE_kmod-usb-serial=y' \
+          'CONFIG_PACKAGE_kmod-usb-serial-option=y' \
+          'CONFIG_PACKAGE_kmod-usb-wdm=y' \
+          'CONFIG_PACKAGE_usb-modeswitch=y' \
+          'CONFIG_PACKAGE_uqmi=y' \
+          'CONFIG_PACKAGE_umbim=y' \
+          'CONFIG_PACKAGE_mwan3=y' \
+          'CONFIG_PACKAGE_luci-app-mwan3=y' \
+          'CONFIG_PACKAGE_samba4-server=y' \
+          'CONFIG_PACKAGE_luci-app-samba4=y' \
+          'CONFIG_PACKAGE_starvpn=y' \
+          > .config
 
 
           make defconfig
 
 
+      - name: Verify configuration
+        working-directory: immortalwrt
+        run: |
 
-      - name: Download
+          grep \
+          "netis_nx30v2" \
+          .config
+
+
+          grep \
+          "CONFIG_PACKAGE_starvpn=y" \
+          .config
+
+
+      - name: Compile StarVPN package
+        working-directory: immortalwrt
+        run: |
+
+          make \
+          package/starvpn/compile \
+          V=s
+
+
+      - name: Download packages
         working-directory: immortalwrt
         run: |
 
@@ -363,8 +347,7 @@ EOF
           -j$(nproc)
 
 
-
-      - name: Build
+      - name: Build firmware
         working-directory: immortalwrt
         run: |
 
@@ -373,21 +356,31 @@ EOF
           V=s
 
 
-
-      - name: Final check
+      - name: Firmware audit
         working-directory: immortalwrt
         run: |
 
-          test -d \
-          bin/targets/mediatek/filogic
+          TARGET="bin/targets/mediatek/filogic"
 
 
+          test -d "$TARGET"
 
-          find \
-          bin/targets/mediatek/filogic \
+
+          find "$TARGET" \
           -type f \
-          | grep -q sysupgrade
+          | grep -q "sysupgrade"
 
+
+          if find "$TARGET" \
+          -iname "*h3c*" \
+          -o \
+          -iname "*n60*"; then
+
+            echo "Wrong firmware detected"
+
+            exit 1
+
+          fi
 
 
       - name: Upload firmware
