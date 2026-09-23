@@ -13,7 +13,6 @@ jobs:
 
     runs-on: ubuntu-24.04
 
-
     steps:
 
       - name: Checkout
@@ -47,19 +46,29 @@ jobs:
 
           git clone \
             --depth 1 \
-            --branch ${IMMORTALWRT_TAG} \
+            --branch "${IMMORTALWRT_TAG}" \
             https://github.com/immortalwrt/immortalwrt.git \
             immortalwrt
 
 
 
-      - name: Clone N30 Pro adaptation patch
+      - name: Clone N30 Pro patch
         run: |
 
           git clone \
             --depth 1 \
-            ${PATCH_REPO} \
+            "${PATCH_REPO}" \
             n30pro-patch
+
+
+
+      - name: Inspect patch repository
+        run: |
+
+          find n30pro-patch \
+          -maxdepth 3 \
+          -type f \
+          | sort
 
 
 
@@ -67,9 +76,27 @@ jobs:
         working-directory: immortalwrt
         run: |
 
-          bash \
-          ../n30pro-patch/scripts/apply-netcore-n30pro.sh \
-          ../n30pro-patch
+          PATCH_FILE=$(find ../n30pro-patch \
+          -name "*.patch" \
+          | head -n1)
+
+
+          if [ -z "$PATCH_FILE" ]; then
+
+            echo "No patch file found"
+
+            exit 1
+
+          fi
+
+
+          echo "Applying:"
+          echo "$PATCH_FILE"
+
+
+          patch \
+          -p1 \
+          < "$PATCH_FILE"
 
 
 
@@ -77,30 +104,45 @@ jobs:
         working-directory: immortalwrt
         run: |
 
-          grep -R \
-          "netcore,n30-pro\|netis,nx30v2" \
-          target/linux/mediatek \
-          || true
+          grep -q \
+          "Device/netis_nx30v2" \
+          target/linux/mediatek/image/filogic.mk
 
 
 
-      - name: Add StarVPN package
+      - name: Prepare StarVPN package
         run: |
 
-          if [ -d package/starvpn ]; then
-
-            mkdir -p \
-            immortalwrt/package/starvpn
-
-            cp -a \
-            package/starvpn/. \
-            immortalwrt/package/starvpn/
-
-          fi
+          mkdir -p \
+          immortalwrt/package/starvpn/starvpn/files
 
 
+          printf '%s\n' \
+          'include $(TOPDIR)/rules.mk' \
+          '' \
+          'PKG_NAME:=starvpn' \
+          'PKG_VERSION:=6.1.0' \
+          'PKG_RELEASE:=1' \
+          '' \
+          'include $(INCLUDE_DIR)/package.mk' \
+          '' \
+          'define Package/starvpn' \
+          ' SECTION:=net' \
+          ' CATEGORY:=Network' \
+          ' TITLE:=StarVPN' \
+          ' DEPENDS:=+kmod-tun' \
+          'endef' \
+          '' \
+          'define Package/starvpn/install' \
+          ' $(INSTALL_DIR) $$(1)/usr/bin' \
+          'endef' \
+          '' \
+          '$$(eval $$(call BuildPackage,starvpn))' \
+          > immortalwrt/package/starvpn/starvpn/Makefile
 
-      - name: Update feeds
+
+
+      - name: Configure feeds
         working-directory: immortalwrt
         run: |
 
@@ -111,16 +153,40 @@ jobs:
 
           ./scripts/feeds update -a
 
+
           ./scripts/feeds install -a
 
 
 
-      - name: Load configuration
+      - name: Generate configuration
         working-directory: immortalwrt
         run: |
 
-          cp \
-          ../configs/n30pro.config \
+          printf '%s\n' \
+          'CONFIG_TARGET_mediatek=y' \
+          'CONFIG_TARGET_mediatek_filogic=y' \
+          'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_netis_nx30v2=y' \
+          'CONFIG_PACKAGE_luci=y' \
+          'CONFIG_PACKAGE_luci-ssl=y' \
+          'CONFIG_PACKAGE_kmod-usb3=y' \
+          'CONFIG_PACKAGE_kmod-usb-storage=y' \
+          'CONFIG_PACKAGE_kmod-usb-storage-uas=y' \
+          'CONFIG_PACKAGE_block-mount=y' \
+          'CONFIG_PACKAGE_kmod-usb-net=y' \
+          'CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' \
+          'CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y' \
+          'CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y' \
+          'CONFIG_PACKAGE_kmod-usb-serial=y' \
+          'CONFIG_PACKAGE_kmod-usb-serial-option=y' \
+          'CONFIG_PACKAGE_kmod-usb-wdm=y' \
+          'CONFIG_PACKAGE_usb-modeswitch=y' \
+          'CONFIG_PACKAGE_uqmi=y' \
+          'CONFIG_PACKAGE_umbim=y' \
+          'CONFIG_PACKAGE_mwan3=y' \
+          'CONFIG_PACKAGE_luci-app-mwan3=y' \
+          'CONFIG_PACKAGE_samba4-server=y' \
+          'CONFIG_PACKAGE_luci-app-samba4=y' \
+          'CONFIG_PACKAGE_starvpn=y' \
           .config
 
 
@@ -128,17 +194,22 @@ jobs:
 
 
 
-      - name: Verify target configuration
+      - name: Verify configuration
         working-directory: immortalwrt
         run: |
 
           grep \
-          CONFIG_TARGET_mediatek=y \
+          "CONFIG_TARGET_mediatek=y" \
           .config
 
 
           grep \
-          CONFIG_TARGET_mediatek_filogic=y \
+          "CONFIG_TARGET_mediatek_filogic=y" \
+          .config
+
+
+          grep \
+          "netis_nx30v2" \
           .config
 
 
@@ -162,23 +233,23 @@ jobs:
 
 
 
-      - name: Firmware check
+      - name: Firmware audit
         working-directory: immortalwrt
         run: |
 
           TARGET="bin/targets/mediatek/filogic"
 
 
-          test -d ${TARGET}
+          test -d "$TARGET"
 
 
-          if find ${TARGET} \
+          if find "$TARGET" \
           -iname "*h3c*" \
           -o -iname "*n60*"; then
 
-              echo "Wrong device firmware detected"
+            echo "Wrong device firmware detected"
 
-              exit 1
+            exit 1
 
           fi
 
