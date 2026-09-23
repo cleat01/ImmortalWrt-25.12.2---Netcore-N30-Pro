@@ -3,7 +3,6 @@ name: Build ImmortalWrt 25.12.2 Netcore N30 Pro Final
 on:
   workflow_dispatch:
 
-
 env:
   IMMORTALWRT_TAG: v25.12.2
   PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
@@ -76,31 +75,31 @@ jobs:
           set -e
 
 
-          PATCH=$(find ../n30pro-patch \
+          PATCHES=$(find ../n30pro-patch \
           -name "*.patch" \
-          | sort \
-          | head -1)
+          | sort)
 
 
+          if [ -z "$PATCHES" ]; then
 
-          if [ -z "$PATCH" ]; then
-
-            echo "N30 Pro patch not found"
+            echo "No N30 Pro patch found"
 
             exit 1
 
           fi
 
 
+          for PATCH in $PATCHES
+          do
 
-          echo "Testing patch"
+            echo "Applying:"
+            echo "$PATCH"
 
 
-
-          if patch \
-          --dry-run \
-          -p1 \
-          < "$PATCH"; then
+            if patch \
+            --dry-run \
+            -p1 \
+            < "$PATCH"; then
 
 
               patch \
@@ -108,15 +107,15 @@ jobs:
               < "$PATCH"
 
 
-          else
+            else
 
 
-              echo "Fallback remove wifi mac patch"
+              echo "Patch conflict, retry filtered patch"
 
 
               awk '
 
-              BEGIN {
+              BEGIN{
                 skip=0
               }
 
@@ -124,10 +123,10 @@ jobs:
               /^diff --git/ {
 
                 if ($0 ~ /11_fix_wifi_mac/) {
-                  skip=1
+                    skip=1
                 }
                 else {
-                  skip=0
+                    skip=0
                 }
 
               }
@@ -137,10 +136,8 @@ jobs:
                 print
               }
 
-
               ' "$PATCH" \
               > /tmp/n30pro.patch
-
 
 
               patch \
@@ -148,21 +145,34 @@ jobs:
               < /tmp/n30pro.patch
 
 
-          fi
+            fi
+
+          done
 
 
 
       - name: Add StarVPN package
         run: |
 
-          if [ ! -d package/starvpn ]; then
+          if [ ! -f package/starvpn/Makefile ]; then
 
-            echo "Missing package/starvpn"
+            echo "StarVPN Makefile missing"
 
             exit 1
 
           fi
 
+
+          if [ ! -d package/starvpn/files ]; then
+
+            echo "StarVPN files directory missing"
+
+            exit 1
+
+          fi
+
+
+          rm -rf immortalwrt/package/starvpn
 
 
           cp -a \
@@ -178,9 +188,7 @@ jobs:
           DTS="target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts"
 
 
-
           test -f "$DTS"
-
 
 
           grep -q \
@@ -188,15 +196,13 @@ jobs:
           "$DTS"
 
 
-
           grep -q \
           "xhci" \
           "$DTS"
 
 
-
           grep -q \
-          "regulator" \
+          "usb@" \
           "$DTS"
 
 
@@ -220,16 +226,14 @@ jobs:
           >> feeds.conf.default
 
 
-
           ./scripts/feeds update -a
-
 
 
           ./scripts/feeds install -a
 
 
 
-      - name: Generate config
+      - name: Generate configuration
         working-directory: immortalwrt
         run: |
 
@@ -239,10 +243,14 @@ jobs:
           'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_netis_nx30v2=y' \
           'CONFIG_PACKAGE_luci=y' \
           'CONFIG_PACKAGE_luci-ssl=y' \
+          'CONFIG_PACKAGE_kmod-usb2=y' \
           'CONFIG_PACKAGE_kmod-usb3=y' \
+          'CONFIG_PACKAGE_kmod-usb-xhci-hcd=y' \
           'CONFIG_PACKAGE_kmod-usb-storage=y' \
           'CONFIG_PACKAGE_kmod-usb-storage-uas=y' \
           'CONFIG_PACKAGE_block-mount=y' \
+          'CONFIG_PACKAGE_kmod-tun=y' \
+          'CONFIG_PACKAGE_iptables=y' \
           'CONFIG_PACKAGE_kmod-usb-net=y' \
           'CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' \
           'CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y' \
@@ -261,19 +269,17 @@ jobs:
           > .config
 
 
-
           make defconfig
 
 
 
-      - name: Verify configuration
+      - name: Verify config
         working-directory: immortalwrt
         run: |
 
           grep \
           "netis_nx30v2" \
           .config
-
 
 
           grep \
@@ -288,16 +294,6 @@ jobs:
 
           make download \
           -j$(nproc)
-
-
-
-      - name: Compile StarVPN package
-        working-directory: immortalwrt
-        run: |
-
-          make \
-          package/starvpn/compile \
-          V=s
 
 
 
@@ -318,15 +314,12 @@ jobs:
           TARGET="bin/targets/mediatek/filogic"
 
 
-
           test -d "$TARGET"
 
 
-
           find "$TARGET" \
-          -type f \
-          | grep -q "sysupgrade"
-
+          -name "*sysupgrade*" \
+          | grep -q .
 
 
           if find "$TARGET" \
@@ -335,10 +328,9 @@ jobs:
           -iname "*n60*"; then
 
 
-            echo "Wrong firmware detected"
+              echo "Wrong firmware detected"
 
-            exit 1
-
+              exit 1
 
           fi
 
