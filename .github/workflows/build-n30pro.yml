@@ -1,4 +1,4 @@
-name: Build ImmortalWrt 25.12.2 Netcore N30 Pro
+name: Build ImmortalWrt 25.12.2 Netcore N30 Pro USB Fix
 
 on:
   workflow_dispatch:
@@ -7,16 +7,20 @@ env:
   IMMORTALWRT_TAG: v25.12.2
   PATCH_REPO: https://github.com/liuyi-htu/Netcore-N30-Pro-patch-for-OpenWrt.git
 
+
 jobs:
 
   build:
 
     runs-on: ubuntu-24.04
 
+
     steps:
+
 
       - name: Checkout
         uses: actions/checkout@v5
+
 
 
       - name: Install dependencies
@@ -41,14 +45,15 @@ jobs:
             patch
 
 
+
       - name: Clone ImmortalWrt
         run: |
 
           git clone \
-            --depth 1 \
-            --branch "${IMMORTALWRT_TAG}" \
-            https://github.com/immortalwrt/immortalwrt.git \
-            immortalwrt
+          --depth 1 \
+          --branch ${IMMORTALWRT_TAG} \
+          https://github.com/immortalwrt/immortalwrt.git \
+          immortalwrt
 
 
 
@@ -56,19 +61,48 @@ jobs:
         run: |
 
           git clone \
-            --depth 1 \
-            "${PATCH_REPO}" \
-            n30pro-patch
+          --depth 1 \
+          ${PATCH_REPO} \
+          n30pro-patch
 
 
 
-      - name: Inspect patch repository
+      - name: Prepare compatible patch
         run: |
 
-          find n30pro-patch \
-          -maxdepth 3 \
-          -type f \
-          | sort
+          PATCH=$(find n30pro-patch \
+          -name "*.patch" \
+          | head -1)
+
+
+          if [ -z "$PATCH" ]; then
+              echo "Patch not found"
+              exit 1
+          fi
+
+
+          echo "$PATCH"
+
+
+          awk '
+          BEGIN{
+            skip=0
+          }
+
+          /^diff --git/ {
+              if ($0 ~ /11_fix_wifi_mac/) {
+                  skip=1
+              } else {
+                  skip=0
+              }
+          }
+
+          skip==0 {
+              print
+          }
+
+          ' "$PATCH" \
+          > /tmp/n30pro-compatible.patch
 
 
 
@@ -76,31 +110,28 @@ jobs:
         working-directory: immortalwrt
         run: |
 
-          PATCH_FILE=$(find ../n30pro-patch \
-          -name "*.patch" \
-          | head -n1)
-
-
-          if [ -z "$PATCH_FILE" ]; then
-
-            echo "No patch file found"
-
-            exit 1
-
-          fi
-
-
-          echo "Applying:"
-          echo "$PATCH_FILE"
-
-
           patch \
           -p1 \
-          < "$PATCH_FILE"
+          --forward \
+          < /tmp/n30pro-compatible.patch
 
 
 
-      - name: Verify N30 Pro target
+      - name: Verify N30 Pro DTS
+        working-directory: immortalwrt
+        run: |
+
+          test -f \
+          target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+
+
+          grep -R \
+          "vbus-supply\|usb-vbus\|regulator" \
+          target/linux/mediatek/dts/mt7981b-netcore-n30-pro.dts
+
+
+
+      - name: Verify device
         working-directory: immortalwrt
         run: |
 
@@ -110,55 +141,7 @@ jobs:
 
 
 
-      - name: Prepare StarVPN package
-        run: |
-
-          mkdir -p \
-          immortalwrt/package/starvpn/starvpn/files
-
-
-          printf '%s\n' \
-          'include $(TOPDIR)/rules.mk' \
-          '' \
-          'PKG_NAME:=starvpn' \
-          'PKG_VERSION:=6.1.0' \
-          'PKG_RELEASE:=1' \
-          '' \
-          'include $(INCLUDE_DIR)/package.mk' \
-          '' \
-          'define Package/starvpn' \
-          ' SECTION:=net' \
-          ' CATEGORY:=Network' \
-          ' TITLE:=StarVPN' \
-          ' DEPENDS:=+kmod-tun' \
-          'endef' \
-          '' \
-          'define Package/starvpn/install' \
-          ' $(INSTALL_DIR) $$(1)/usr/bin' \
-          'endef' \
-          '' \
-          '$$(eval $$(call BuildPackage,starvpn))' \
-          > immortalwrt/package/starvpn/starvpn/Makefile
-
-
-
-      - name: Configure feeds
-        working-directory: immortalwrt
-        run: |
-
-          echo \
-          "src-link starvpn $(pwd)/package/starvpn" \
-          >> feeds.conf.default
-
-
-          ./scripts/feeds update -a
-
-
-          ./scripts/feeds install -a
-
-
-
-      - name: Generate configuration
+      - name: Generate config
         working-directory: immortalwrt
         run: |
 
@@ -186,7 +169,6 @@ jobs:
           'CONFIG_PACKAGE_luci-app-mwan3=y' \
           'CONFIG_PACKAGE_samba4-server=y' \
           'CONFIG_PACKAGE_luci-app-samba4=y' \
-          'CONFIG_PACKAGE_starvpn=y' \
           .config
 
 
@@ -194,46 +176,23 @@ jobs:
 
 
 
-      - name: Verify configuration
+      - name: Download
         working-directory: immortalwrt
         run: |
 
-          grep \
-          "CONFIG_TARGET_mediatek=y" \
-          .config
-
-
-          grep \
-          "CONFIG_TARGET_mediatek_filogic=y" \
-          .config
-
-
-          grep \
-          "netis_nx30v2" \
-          .config
+          make download -j$(nproc)
 
 
 
-      - name: Download packages
+      - name: Compile
         working-directory: immortalwrt
         run: |
 
-          make download \
-          -j$(nproc)
+          make -j$(nproc) V=s
 
 
 
-      - name: Build firmware
-        working-directory: immortalwrt
-        run: |
-
-          make \
-          -j$(nproc) \
-          V=s
-
-
-
-      - name: Firmware audit
+      - name: Audit firmware
         working-directory: immortalwrt
         run: |
 
@@ -247,7 +206,7 @@ jobs:
           -iname "*h3c*" \
           -o -iname "*n60*"; then
 
-            echo "Wrong device firmware detected"
+            echo "Wrong firmware detected"
 
             exit 1
 
