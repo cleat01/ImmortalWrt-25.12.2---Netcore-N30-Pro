@@ -53,6 +53,40 @@ jobs:
             https://github.com/rabbitrogi/luci-app-zerotier.git \
             immortalwrt/package/luci-app-zerotier
 
+      - name: Prioritize PassWall feeds
+        working-directory: immortalwrt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            cat <<'EOF'
+          src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main
+          src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main
+          EOF
+            cat feeds.conf.default
+          } > feeds.conf.default.new
+
+          mv feeds.conf.default.new feeds.conf.default
+
+      - name: Update and install feeds
+        working-directory: immortalwrt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          ./scripts/feeds uninstall luci-app-passwall
+          ./scripts/feeds install -p passwall_luci luci-app-passwall
+
+          PASSWALL_MAKEFILE="package/feeds/passwall_luci/luci-app-passwall/Makefile"
+
+          test -f "$PASSWALL_MAKEFILE"
+          grep -Fq 'CONFIG_PACKAGE_$(PKG_NAME)_Nftables_Transparent_Proxy' "$PASSWALL_MAKEFILE"
+          grep -Fq 'CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_Xray' "$PASSWALL_MAKEFILE"
+
       - name: Verify N30 Pro hardware definitions
         working-directory: immortalwrt
         shell: bash
@@ -100,26 +134,7 @@ jobs:
           grep -Fq 'netcore,n30-pro' "$WIFI_MAC"
           grep -Fq 'define Device/netcore_n30-pro' "$IMAGE"
 
-          echo "N30 Pro USB power, XHCI, Wi-Fi and device profile declarations passed."
-
-      - name: Add PassWall feeds
-        working-directory: immortalwrt
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cat >> feeds.conf.default <<'EOF'
-          src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main
-          src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main
-          EOF
-
-      - name: Update and install feeds
-        working-directory: immortalwrt
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          echo "N30 Pro USB power, XHCI, Wi-Fi and device profile checks passed."
 
       - name: Generate configuration
         working-directory: immortalwrt
@@ -191,6 +206,7 @@ jobs:
           CONFIG_PACKAGE_samba4-server=y
           CONFIG_PACKAGE_luci-app-samba4=y
 
+          CONFIG_PACKAGE_firewall4=y
           CONFIG_PACKAGE_luci-app-passwall=y
           CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y
           CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
@@ -214,12 +230,16 @@ jobs:
             "CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y"
             "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y"
             "CONFIG_PACKAGE_kmod-usb-net-rndis=y"
+            "CONFIG_PACKAGE_luci-proto-mbim=y"
+            "CONFIG_PACKAGE_luci-proto-ncm=y"
+            "CONFIG_PACKAGE_luci-proto-qmi=y"
             "CONFIG_PACKAGE_mwan3=y"
             "CONFIG_PACKAGE_luci-app-mwan3=y"
             "CONFIG_PACKAGE_zerotier=y"
             "CONFIG_PACKAGE_luci-app-zerotier=y"
             "CONFIG_PACKAGE_samba4-server=y"
             "CONFIG_PACKAGE_luci-app-samba4=y"
+            "CONFIG_PACKAGE_firewall4=y"
             "CONFIG_PACKAGE_luci-app-passwall=y"
             "CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y"
             "CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y"
@@ -234,6 +254,8 @@ jobs:
           done
 
           test -f package/luci-app-zerotier/Makefile
+          test -f package/feeds/passwall_luci/luci-app-passwall/Makefile
+
           echo "Required configuration checks passed."
 
       - name: Download sources
@@ -294,10 +316,13 @@ jobs:
             "kmod-usb-net-huawei-cdc-ncm"
             "kmod-usb-net-qmi-wwan"
             "kmod-usb-net-rndis"
+            "luci-proto-3g"
             "luci-proto-mbim"
             "luci-proto-ncm"
             "luci-proto-qmi"
             "kmod-mt7915e"
+            "kmod-mt7981-firmware"
+            "mt7981-wo-firmware"
           )
 
           for package in "${required_packages[@]}"; do
