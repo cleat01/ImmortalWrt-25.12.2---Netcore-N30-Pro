@@ -142,6 +142,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          mkdir -p build-logs
+
           cat > .config <<'EOF'
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
@@ -263,14 +265,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          make download -j4 V=s
+
+          if make download -j4 > build-logs/download.log 2>&1; then
+            tail -n 40 build-logs/download.log
+          else
+            result=$?
+            echo "Source download failed. Last 250 log lines:"
+            tail -n 250 build-logs/download.log
+            exit "$result"
+          fi
 
       - name: Build firmware
         working-directory: immortalwrt
         shell: bash
         run: |
           set -euo pipefail
-          make -j2 V=s
+
+          if make -j2 > build-logs/build.log 2>&1; then
+            tail -n 60 build-logs/build.log
+          else
+            result=$?
+            echo "Firmware build failed. Last 300 log lines:"
+            tail -n 300 build-logs/build.log
+            exit "$result"
+          fi
 
       - name: Verify XHCI modules
         working-directory: immortalwrt
@@ -335,6 +353,7 @@ jobs:
           echo "Firmware manifest checks passed."
 
       - name: Generate build report
+        if: success()
         working-directory: immortalwrt
         shell: bash
         run: |
@@ -353,13 +372,27 @@ jobs:
             echo "Firmware files"
             find "$DIR" -maxdepth 1 -type f -print | sort
             echo
-            echo "Firmware manifest"
-            cat "$MANIFEST"
+            echo "Manifest path: $MANIFEST"
+            echo "Selected packages:"
+            grep -E '^(mwan3|luci-app-mwan3|zerotier|luci-app-zerotier|samba4-server|luci-app-samba4|luci-app-passwall|xray-core)([[:space:]]|$)' "$MANIFEST"
           } > build-report.txt
 
           cat build-report.txt
 
+      - name: Upload build diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            immortalwrt/build-logs/**
+            immortalwrt/.config
+            immortalwrt/feeds.conf.default
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload firmware
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ImmortalWrt-25.12.2-Netcore-N30-Pro
